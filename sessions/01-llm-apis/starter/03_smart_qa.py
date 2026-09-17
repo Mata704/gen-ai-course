@@ -54,6 +54,10 @@ def choose_generation_settings(task_type: str) -> dict[str, int | float]:
     )
 
 
+def display_metrics() -> None:
+    pass
+
+
 def stream_answer(question: str, history: list[dict[str, str]]) -> str:
     """Stream one answer using the decisions made in the functions above."""
     client = OpenAI()
@@ -72,6 +76,7 @@ def stream_answer(question: str, history: list[dict[str, str]]) -> str:
             print(event.delta, end="", flush=True)
 
     print()
+    display_metrics()
     return "".join(answer_parts)
 
 
