@@ -1,4 +1,4 @@
-"""Session 1 extension: stream responses and make context a design choice."""
+"""Session 1 reference: stream responses while keeping recent context."""
 
 import os
 
@@ -8,35 +8,30 @@ from openai import OpenAI
 
 load_dotenv()
 
-if not os.getenv("OPENAI_API_KEY"):
-    raise RuntimeError("Set OPENAI_API_KEY in your local .env file first.")
 
 def build_instructions() -> str:
-    """Return the current assistant contract.
+    """Define a contract that handles uncertainty explicitly."""
+    return """You are a concise and rigorous learning assistant.
 
-    TODO: improve this contract. Decide how the assistant should respond to
-    unclear questions and to information it has not received.
-
-    Hint 1: write the expected behaviour before writing the prompt.
-    Hint 2: useful uncertainty names what is missing and proposes one next step.
-    """
-    return "You are a concise learning assistant. Be helpful and clear."
+Answer in clear Portuguese. When essential information is missing, do not
+invent it; say what you do not know and suggest a useful next step or ask one
+focused question.
+"""
 
 
 def build_input(question: str, history: list[dict[str, str]]) -> str:
-    """Build the input sent to the model.
-
-    TODO: this baseline ignores history, so the assistant has no memory. Decide
-    which previous turns are useful to retain and how many are enough.
-
-    Hint 1: prove the problem with two questions where the second depends on the
-    first.
-    Hint 2: start with a small recent window rather than every prior turn.
-    Hint 3: make the boundary between conversation context and new question
-    obvious to the model.
-    """
-    _ = history
-    return question
+    """Include only the two most recent full turns of the conversation."""
+    recent_history = history[-4:]
+    context_lines = [
+        f"{turn['role'].upper()}: {turn['content']}" for turn in recent_history
+    ]
+    conversation_context = "\n".join(context_lines) or "(no previous context)"
+    return (
+        "Recent conversation context:\n"
+        f"{conversation_context}\n\n"
+        "New user question:\n"
+        f"{question}"
+    )
 
 
 def stream_answer(question: str, history: list[dict[str, str]]) -> str:
@@ -60,6 +55,9 @@ def stream_answer(question: str, history: list[dict[str, str]]) -> str:
 
 
 def main() -> None:
+    if not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError("Set OPENAI_API_KEY in your local .env file first.")
+
     history: list[dict[str, str]] = []
     print("Ask a question. Use /reset to clear context or /quit to exit.")
 
@@ -75,7 +73,7 @@ def main() -> None:
             print("Please enter a question.")
             continue
 
-        print("Assistant: ", end="")
+        print("\nAssistant: ", end="")
         answer = stream_answer(question, history)
         history.extend([
             {"role": "user", "content": question},
