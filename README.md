@@ -39,3 +39,4 @@ uv run python sessions/01-llm-apis/starter/01_first_call.py
 - Keep API keys local; never commit `.env` files.
 - Build small, runnable examples before introducing abstractions.
 - Use the official SDK and course-specific examples rather than copying entire external lessons.
+exercíco 3
