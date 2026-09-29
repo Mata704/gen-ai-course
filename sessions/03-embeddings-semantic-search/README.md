@@ -67,13 +67,14 @@ What this exercise puts into practice:
 
 ## 3. Add Chroma and metadata filters
 
-`03_chroma_filtered_search.py` provides the OpenAI call, persistent Chroma
-client, prepared document metadata, and CLI. Complete these functions:
+`03_chroma_filtered_search.py` provides document loading, embeddings, the
+persistent Chroma collection, and a small CLI. Complete these functions:
 
 - `build_where_filter` converts optional filters into a Chroma `where` clause;
 - `index_documents` writes stable IDs, documents, metadata, and embeddings with
   `upsert`;
-- `search_collection` queries Chroma and normalizes its nested response.
+- `search_collection` queries Chroma, converts distance to similarity, and
+  filters out results below the evidence threshold.
 
 Run an unfiltered search:
 
@@ -85,12 +86,6 @@ Combine semantic meaning with deterministic constraints:
 
 ```bash
 uv run python sessions/03-embeddings-semantic-search/starter/03_chroma_filtered_search.py --query "Which mission used a vehicle on the Moon?" --mission-type lunar_landing --min-year 1970
-```
-
-Reset the local teaching index when needed:
-
-```bash
-uv run python sessions/03-embeddings-semantic-search/starter/03_chroma_filtered_search.py --reset-index --query "Which mission was the final lunar mission?"
 ```
 
 The exercise is complete when:

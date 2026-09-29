@@ -115,7 +115,9 @@ def main() -> None:
     collection = get_collection()
     index_documents(collection, records, embeddings)
 
-    question = (args.query or input("Ask a question about the Apollo missions: ")).strip()
+    question = (
+        args.query or input("Ask a question about the Apollo missions: ")
+    ).strip()
     if not question:
         raise ValueError("Please enter a question.")
     query_embedding = create_embeddings(client, [question])[0]
