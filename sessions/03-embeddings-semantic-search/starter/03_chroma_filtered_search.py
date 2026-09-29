@@ -58,9 +58,16 @@ def build_where_filter(
     mission_type: str | None, min_year: int | None
 ) -> dict[str, Any] | None:
     """Build a Chroma filter from the optional mission type and year."""
-    # TODO: use equality for mission_type, $gte for min_year, and $and for both.
-    raise NotImplementedError("Implement build_where_filter.")
-
+    conditions: list[dict[str, Any]] = []
+    if mission_type is not None:
+        conditions.append({"mission_type": {"$eq": mission_type}})
+    if min_year is not None:
+        conditions.append({"year": {"$gte": min_year}})
+    if not conditions:
+        return None
+    if len(conditions) == 1:
+        return conditions[0]
+    return {"$and": conditions}
 
 def index_documents(
     collection: Collection,
@@ -68,8 +75,18 @@ def index_documents(
     embeddings: list[list[float]],
 ) -> None:
     """Upsert passages with stable IDs so repeated runs do not add duplicates."""
-    # TODO: use each source filename as the ID; include text, metadata, embeddings.
-    raise NotImplementedError("Implement index_documents.")
+
+    if len(records) != len(embeddings):
+        raise ValueError(
+            f"Expected {len(records)} embeddings, got {len(embeddings)}."
+        )
+
+    collection.upsert(
+        documents=[record["text"] for record in records],
+        metadatas=[record["metadata"] for record in records],
+        ids=[record["source"] for record in records],
+        embeddings=embeddings,
+    )
 
 
 def search_collection(
@@ -80,8 +97,36 @@ def search_collection(
     min_similarity: float,
 ) -> list[dict[str, Any]]:
     """Query Chroma and return source, text, metadata, and similarity."""
-    # TODO: query, convert cosine distance to similarity, and apply the threshold.
-    raise NotImplementedError("Implement search_collection.")
+
+    if top_k < 1:
+        raise ValueError("top_k must be at least 1.")
+    response = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=top_k,
+        where=where,
+        include=["documents", "metadatas", "distances"],
+    )
+
+    results = []
+    for source, text, metadata, distance in zip(
+        response["ids"][0],
+        response["documents"][0],
+        response["metadatas"][0],
+        response["distances"][0],
+        strict=True,
+    ):
+        similarity = 1.0 - float(distance)
+        if similarity >= min_similarity:
+            results.append(
+                {
+                    "source": source,
+                    "text": text,
+                    "metadata": metadata,
+                    "similarity": similarity,
+                }
+            )
+    return results
+
 
 
 def get_collection() -> Collection:

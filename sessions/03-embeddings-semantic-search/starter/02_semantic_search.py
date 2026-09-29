@@ -113,7 +113,20 @@ def rank_passages(
     Build one SearchResult per passage, sort all results, and only then keep
     top_k. Reject top_k values smaller than one.
     """
-    raise NotImplementedError("Implement rank_passages.")
+
+    if top_k < 1:
+        raise ValueError("top_k must be at least 1.")
+
+    results = [
+        SearchResult(
+            source=passage.source,
+            text=passage.text,
+            score=cosine_similarity(query_embedding, passage.embedding),
+        )
+        for passage in passages
+    ]
+
+    return sorted(results, key=lambda result: result.score, reverse=True)[:top_k]
 
 
 def decide_search_outcome(
@@ -126,7 +139,32 @@ def decide_search_outcome(
     best score is below min_score. Keep the candidates in the outcome so that
     the decision remains inspectable.
     """
-    raise NotImplementedError("Implement decide_search_outcome.")
+    if not results:
+        return SearchOutcome(
+            has_enough_context=False,
+            message="No passages were available to support the question.",
+            results=[],
+        )
+
+    best_score = results[0].score
+    if best_score < min_score:
+        return SearchOutcome(
+            has_enough_context=False,
+            message=(
+                "No result met the evidence threshold "
+                f"({best_score:.3f} < {min_score:.3f})."
+            ),
+            results=results,
+        )
+
+    return SearchOutcome(
+        has_enough_context=True,
+        message=(
+            "The best result met the evidence threshold "
+            f"({best_score:.3f} >= {min_score:.3f})."
+        ),
+        results=results,
+    )
 
 
 def search_passages(
