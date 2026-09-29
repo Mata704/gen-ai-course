@@ -88,14 +88,21 @@ def create_embeddings(client: OpenAI, texts: list[str]) -> list[list[float]]:
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:
-    """Return the cosine similarity between two vectors.
+    """Return the cosine similarity between two non-empty, equal-size vectors."""
+    if not left or not right:
+        raise ValueError("Cosine similarity requires non-empty vectors.")
+    if len(left) != len(right):
+        raise ValueError("Cosine similarity requires vectors of equal length.")
 
-    Requirements:
-    - reject vectors with different dimensions;
-    - reject empty or zero-magnitude vectors;
-    - calculate dot(left, right) / (magnitude(left) * magnitude(right)).
-    """
-    raise NotImplementedError("Implement cosine_similarity.")
+    dot_product = sum(
+        left_value * right_value
+        for left_value, right_value in zip(left, right, strict=True)
+    )
+    left_magnitude = math.sqrt(sum(value**2 for value in left))
+    right_magnitude = math.sqrt(sum(value**2 for value in right))
+    if left_magnitude == 0 or right_magnitude == 0:
+        raise ValueError("Cosine similarity is undefined for a zero vector.")
+    return dot_product / (left_magnitude * right_magnitude)
 
 
 def rank_passages(

@@ -17,14 +17,19 @@ uv run python sessions/03-embeddings-semantic-search/starter/01_embed_passages.p
 ```
 
 The script creates all document embeddings in one request and prints the model,
-number of passages, and vector dimensions. There is nothing to implement.
+number of passages, and vector dimensions. It also saves the vectors to
+`sessions/03-embeddings-semantic-search/generated/passage-embeddings.json`.
+Open that JSON file in an editor to inspect the model, dimensions, source names,
+and numeric vectors. JSON is useful here because it preserves the vectors as
+arrays of numbers that Python and other tools can read; Markdown would only make
+the long arrays harder to inspect.
 
 ## 2. Build and evaluate semantic search
 
 `02_semantic_search.py` provides document loading, batched API calls, a search
-CLI, and labelled evaluation cases. Complete these functions:
+CLI, labelled evaluation cases, and the `cosine_similarity` helper. Complete
+these functions:
 
-- `cosine_similarity` validates and compares two vectors;
 - `rank_passages` scores every passage and keeps the best `top_k` results;
 - `decide_search_outcome` decides whether to use the candidates or abstain.
 
@@ -48,7 +53,6 @@ uv run python sessions/03-embeddings-semantic-search/starter/02_semantic_search.
 
 The exercise is complete when:
 
-- mismatched, empty, and zero vectors are rejected clearly;
 - results are sorted from highest to lowest similarity;
 - `top_k` values below one are rejected;
 - low-scoring searches abstain while retaining candidates for inspection;
