@@ -66,6 +66,9 @@ What this exercise puts into practice:
 `03_chroma_filtered_search.py` provides the OpenAI call, persistent Chroma
 client, prepared document metadata, and CLI. Complete these functions:
 
+For a process diagram and explanations of the concepts, advantages, and
+limitations, see [the Exercise 3 guide](exercicio-3-guia.md).
+
 - `build_where_filter` converts optional filters into a Chroma `where` clause;
 - `index_documents` writes stable IDs, documents, metadata, and embeddings with
   `upsert`;

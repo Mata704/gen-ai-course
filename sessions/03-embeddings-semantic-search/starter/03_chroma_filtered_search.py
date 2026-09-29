@@ -101,7 +101,17 @@ def build_where_filter(filters: SearchFilters) -> dict[str, Any] | None:
     - return None when no filters were supplied;
     - combine multiple conditions with $and.
     """
-    raise NotImplementedError("Implement build_where_filter.")
+    conditions: list[dict[str, Any]] = []
+    if filters.mission_type is not None:
+        conditions.append({"mission_type": {"$eq": filters.mission_type}})
+    if filters.min_year is not None:
+        conditions.append({"year": {"$gte": filters.min_year}})
+
+    if not conditions:
+        return None
+    if len(conditions) == 1:
+        return conditions[0]
+    return {"$and": conditions}
 
 
 def index_documents(
@@ -114,7 +124,20 @@ def index_documents(
     Use each source filename as its stable ID. Validate that every record has
     exactly one embedding before writing. Upsert must make repeated runs safe.
     """
-    raise NotImplementedError("Implement index_documents.")
+    if len(records) != len(embeddings):
+        raise ValueError(
+            f"Expected one embedding per record; got {len(records)} records "
+            f"and {len(embeddings)} embeddings."
+        )
+    if not records:
+        return
+
+    collection.upsert(
+        ids=[record.source for record in records],
+        documents=[record.text for record in records],
+        metadatas=[record.metadata for record in records],
+        embeddings=embeddings,
+    )
 
 
 def search_collection(
@@ -130,7 +153,34 @@ def search_collection(
     Include IDs, documents, metadata, and distances in each returned row.
     Discard rows below min_similarity and reject top_k values below one.
     """
-    raise NotImplementedError("Implement search_collection.")
+    if top_k < 1:
+        raise ValueError("top_k must be at least one.")
+
+    response = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=top_k,
+        where=build_where_filter(filters),
+        include=["documents", "metadatas", "distances"],
+    )
+    results: list[VectorSearchResult] = []
+    for source, text, metadata, distance in zip(
+        response["ids"][0],
+        response["documents"][0],
+        response["metadatas"][0],
+        response["distances"][0],
+        strict=True,
+    ):
+        similarity = 1.0 - distance
+        if similarity >= min_similarity:
+            results.append(
+                VectorSearchResult(
+                    source=source,
+                    text=text,
+                    metadata=metadata,
+                    similarity=similarity,
+                )
+            )
+    return results
 
 
 def get_collection(reset_index: bool) -> Collection:
