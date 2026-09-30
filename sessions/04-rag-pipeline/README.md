@@ -46,6 +46,15 @@ Run the comparison:
 uv run python sessions/04-rag-pipeline/starter/02_chunking_lab.py --strategy both --chunk-words 90 --overlap-words 20
 ```
 
+Run one strategy at a time with `--strategy fixed` or `--strategy structure`.
+Add `--save-chunks` to save each strategy's chunks to Markdown in
+`sessions/04-rag-pipeline/chunks/`, grouped by document. Open the two files side
+by side to see where each strategy cut the text:
+
+```bash
+uv run python sessions/04-rag-pipeline/starter/02_chunking_lab.py --strategy both --chunk-words 40 --overlap-words 10 --save-chunks
+```
+
 Try at least two configurations. This lab prints only `development` cases,
 leaving `holdout` cases unseen for Session 5. Do not choose a winner only from the average:
 inspect failures involving exact names, numbers, multi-fact questions and
