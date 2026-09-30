@@ -49,10 +49,16 @@ def select_context(
     min_score: float,
 ) -> list[SearchResult]:
     """Keep ranked evidence above threshold while respecting a token budget."""
-    # TODO: validate max_tokens, preserve ranking, and add only complete chunks
-    # that fit. Use format_context(candidate_results) with count_tokens so the
-    # separators and source labels are included in the budget.
-    raise NotImplementedError
+    if max_tokens < 1:
+        raise ValueError("max_tokens must be at least 1.")
+    selected: list[SearchResult] = []
+    for result in ranked_results:
+        if result.score < min_score:
+            continue
+        candidate = [*selected, result]
+        if count_tokens(format_context(candidate)) <= max_tokens:
+            selected.append(result)
+    return selected
 
 
 def generate_grounded_answer(
@@ -61,21 +67,62 @@ def generate_grounded_answer(
     selected_results: list[SearchResult],
 ) -> GroundedAnswer:
     """Generate one structured answer constrained to the selected evidence."""
-    # TODO: call client.responses.parse with GroundedAnswer as text_format.
-    # The prompt must: use only supplied evidence, require verbatim citation
-    # quotes, and set answerable=false when the evidence is insufficient.
-    raise NotImplementedError
+    context = format_context(selected_results) or "No evidence was selected."
+    response = client.responses.parse(
+        model=GENERATION_MODEL,
+        input=[
+            {
+                "role": "system",
+                "content": (
+                    "Use only the supplied evidence. Do not use background knowledge. "
+                    "If the evidence is insufficient, set answerable=false, explain "
+                    "that the corpus is insufficient, and return no citations. If it "
+                    "is sufficient, cite every material claim. Each citation must use "
+                    "the exact source and chunk ID and a short verbatim quote."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Question:\n{question}\n\nEvidence:\n{context}",
+            },
+        ],
+        text_format=GroundedAnswer,
+    )
+    if response.output_parsed is None:
+        raise RuntimeError("The model did not return a parsed answer.")
+    return response.output_parsed
 
+def _normalize_whitespace(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip().casefold()
 
 def validate_citations(
     answer: GroundedAnswer,
     selected_results: list[SearchResult],
 ) -> list[str]:
     """Return validation errors instead of trusting model citations blindly."""
-    # TODO: enforce citations for answerable answers, reject citations on an
-    # abstention, verify source + chunk_id pairs, and ensure each normalized
-    # quote occurs verbatim in the cited chunk.
-    raise NotImplementedError
+    errors: list[str] = []
+    available = {
+        (result.chunk.source, result.chunk.chunk_id): result.chunk.text
+        for result in selected_results
+    }
+
+    if answer.answerable and not answer.citations:
+        errors.append("An answerable response must include at least one citation.")
+    if not answer.answerable and answer.citations:
+        errors.append("An abstention must not include citations.")
+
+    for citation in answer.citations:
+        key = (citation.source, citation.chunk_id)
+        if key not in available:
+            errors.append(f"Unknown citation target: {citation.source} / {citation.chunk_id}")
+            continue
+        quote = _normalize_whitespace(citation.quote)
+        chunk_text = _normalize_whitespace(available[key])
+        if not quote:
+            errors.append(f"Empty quote for {citation.chunk_id}")
+        elif quote not in chunk_text:
+            errors.append(f"Quote does not occur in {citation.chunk_id}: {citation.quote!r}")
+    return errors
 
 
 def parse_args() -> argparse.Namespace:
