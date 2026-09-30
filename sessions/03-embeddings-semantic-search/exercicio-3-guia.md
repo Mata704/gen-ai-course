@@ -98,3 +98,9 @@ A resposta do Chroma contém listas aninhadas. A função combina IDs, documento
 `--mission-type` e `--min-year` definem filtros; `--top-k` controla quantos candidatos pedir; `--min-similarity` controla quais são devolvidos. `--reset-index` apaga a coleção deste exercício antes de a recriar, útil quando se quer reconstruir o índice. A chave `OPENAI_API_KEY` é necessária para gerar embeddings.
 
 Estes controlos tornam as experiências repetíveis e fáceis de comparar. Em contrapartida, escolher parâmetros não corrige metadata incorreta nem substitui a avaliação com perguntas reais; o ficheiro `test-data/search-cases.md` inclui casos com resultados esperados e casos em que a pesquisa deve abster-se.
+
+
+keyword search
+IBAN -> exemplos pode dar keywords alfgo aparece à frente
+vector query
+vector prompt

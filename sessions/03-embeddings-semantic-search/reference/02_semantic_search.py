@@ -1,4 +1,4 @@
-"""Session 3 challenge: build and evaluate semantic search without a vector DB."""
+"""Session 3 reference solution: semantic search without a vector DB."""
 
 import argparse
 import json
@@ -88,54 +88,54 @@ def create_embeddings(client: OpenAI, texts: list[str]) -> list[list[float]]:
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:
-    """Return the cosine similarity between two vectors.
+    """Return the cosine similarity between two non-empty, non-zero vectors."""
+    if len(left) != len(right):
+        raise ValueError("Vectors must have the same number of dimensions.")
+    if not left:
+        raise ValueError("Vectors must not be empty.")
 
-    Requirements:
-    - reject vectors with different dimensions;
-    - reject empty or zero-magnitude vectors;
-    - calculate dot(left, right) / (magnitude(left) * magnitude(right)).
-    """
-    # Em palavras simples:
-    # 1. Verificar se os dois vetores têm o mesmo tamanho.
-    # 2. Se algum estiver vazio ou for composto apenas por zeros, indicar erro.
-    # 3. Usar a fórmula de similaridade para comparar a direção dos vetores.
-    # 4. Devolver um valor que indique o quanto os vetores são parecidos.
-    raise NotImplementedError("Implement cosine_similarity.")
+    left_magnitude = math.sqrt(sum(value * value for value in left))
+    right_magnitude = math.sqrt(sum(value * value for value in right))
+    if left_magnitude == 0 or right_magnitude == 0:
+        raise ValueError("Vectors must have non-zero magnitude.")
+
+    dot_product = sum(left_value * right_value for left_value, right_value in zip(
+        left, right, strict=True
+    ))
+    return dot_product / (left_magnitude * right_magnitude)
 
 
 def rank_passages(
     passages: list[Passage], query_embedding: list[float], top_k: int = 3
 ) -> list[SearchResult]:
-    """Score every passage and return the top_k results, highest score first.
+    """Return the top_k passages ordered from highest to lowest similarity."""
+    if top_k < 1:
+        raise ValueError("top_k must be at least 1.")
 
-    Build one SearchResult per passage, sort all results, and only then keep
-    top_k. Reject top_k values smaller than one.
-    """
-    # Em palavras simples:
-    # 1. Confirmar que top_k é pelo menos 1.
-    # 2. Comparar cada passagem com a pergunta e calcular uma pontuação.
-    # 3. Guardar juntos o nome do ficheiro, o texto e a pontuação.
-    # 4. Pôr primeiro as passagens com a pontuação mais alta.
-    # 5. Devolver apenas a quantidade pedida em top_k.
-    raise NotImplementedError("Implement rank_passages.")
+    results = [
+        SearchResult(
+            source=passage.source,
+            text=passage.text,
+            score=cosine_similarity(passage.embedding, query_embedding),
+        )
+        for passage in passages
+    ]
+    results.sort(key=lambda result: result.score, reverse=True)
+    return results[:top_k]
 
 
 def decide_search_outcome(
     results: list[SearchResult], min_score: float
 ) -> SearchOutcome:
-    """Decide whether the best result is strong enough to use.
-
-    A top-k search always returns candidates. It does not prove that any
-    candidate supports the question. Abstain when there are no results or the
-    best score is below min_score. Keep the candidates in the outcome so that
-    the decision remains inspectable.
-    """
-    # Em palavras simples:
-    # 1. Se não houver passagens, dizer que não há informação suficiente.
-    # 2. Se houver, olhar para a pontuação da passagem que ficou em primeiro.
-    # 3. Se a pontuação não chegar ao mínimo, não usar a passagem como evidência.
-    # 4. Devolver a decisão e manter a lista de passagens para podermos revê-la.
-    raise NotImplementedError("Implement decide_search_outcome.")
+    has_enough_context = bool(results) and results[0].score >= min_score
+ 
+    return SearchOutcome(
+        has_enough_context=has_enough_context,
+        message= "Contexto Suficiente."
+                if has_enough_context
+                else "Sem contexto suficiente, abster de responder.",
+        results=results,
+    )
 
 
 def search_passages(
