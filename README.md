@@ -13,6 +13,7 @@ material close to the concepts taught in each class.
 - [`sessions/03-embeddings-semantic-search/`](sessions/03-embeddings-semantic-search/) — embeddings, evaluated semantic search, and metadata-filtered vector search.
 - [`sessions/04-rag-pipeline/`](sessions/04-rag-pipeline/) — end-to-end RAG, chunking experiments, context budgets, grounding, and citation validation.
 - [`sessions/05-advanced-rag-evaluation/`](sessions/05-advanced-rag-evaluation/) — RAG evaluation, hybrid retrieval, regression analysis, and quality gates.
+- [`sessions/06-conversational-ai/`](sessions/06-conversational-ai/) — multi-turn history, context-window management, conversational RAG, and session isolation.
 
 ## Getting started
 

@@ -34,10 +34,7 @@ def fixed_size_chunks(
     documents: list[Document], chunk_words: int, overlap_words: int
 ) -> list[Chunk]:
     """Split documents into overlapping word windows with stable IDs."""
-    # TODO:
-    # 1. Validate chunk_words > 0 and 0 <= overlap_words < chunk_words.
-    # 2. Advance by chunk_words - overlap_words.
-    # 3. Preserve source/title and give every chunk a stable, unique ID.
+
     raise NotImplementedError
 
 
@@ -45,11 +42,6 @@ def structure_aware_chunks(
     documents: list[Document], chunk_words: int, overlap_words: int
 ) -> list[Chunk]:
     """Split by Markdown section, adding document and section headings."""
-    # TODO:
-    # 1. Use markdown_sections(document) to keep semantic boundaries.
-    # 2. Prefix each chunk with document and section headings.
-    # 3. Split long sections into overlapping windows without dropping text.
-    # 4. Keep stable IDs and source metadata.
     raise NotImplementedError
 
 
