@@ -35,14 +35,68 @@ def fixed_size_chunks(
 ) -> list[Chunk]:
     """Split documents into overlapping word windows with stable IDs."""
 
-    raise NotImplementedError
+    if chunk_words < 1:
+        raise ValueError("chunk_words must be at least 1.")
+    if overlap_words < 0 or overlap_words >= chunk_words:
+        raise ValueError("overlap_words must be between 0 and chunk_words - 1.")
+
+    chunks: list[Chunk] = []
+    step = chunk_words - overlap_words
+    for document in documents:
+        words = document.text.split()
+        for start in range(0, len(words), step):
+            text = " ".join(words[start : start + chunk_words])
+            if not text:
+                continue
+            chunk_number = start // step + 1
+            chunks.append(
+                Chunk(
+                    chunk_id=f"{document.source}::fixed:{chunk_number:04d}",
+                    source=document.source,
+                    title=document.title,
+                    text=text,
+                )
+            )
+    return chunks
 
 
 def structure_aware_chunks(
     documents: list[Document], chunk_words: int, overlap_words: int
 ) -> list[Chunk]:
     """Split by Markdown section, adding document and section headings."""
-    raise NotImplementedError
+    if chunk_words < 1:
+        raise ValueError("chunk_words must be at least 1.")
+    if overlap_words < 0 or overlap_words >= chunk_words:
+        raise ValueError("overlap_words must be between 0 and chunk_words - 1.")
+
+    chunks: list[Chunk] = []
+    step = chunk_words - overlap_words
+    for document in documents:
+        for section_number, (heading, content) in enumerate(
+            markdown_sections(document), start=1
+        ):
+            words = content.split()
+            for start in range(0, len(words), step):
+                body = " ".join(words[start : start + chunk_words])
+                if not body:
+                    continue
+                contextual_heading = (
+                    document.title if heading == document.title
+                    else f"{document.title} > {heading}"
+                )
+                chunk_number = start // step + 1
+                chunks.append(
+                    Chunk(
+                        chunk_id=(
+                            f"{document.source}::section:{section_number:03d}"
+                            f":chunk:{chunk_number:03d}"
+                        ),
+                        source=document.source,
+                        title=document.title,
+                        text=f"{contextual_heading}\n\n{body}",
+                    )
+                )
+    return chunks
 
 
 def evaluate_strategy(

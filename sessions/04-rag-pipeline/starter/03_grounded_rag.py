@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import re
 import sys
 from pathlib import Path
@@ -49,10 +50,19 @@ def select_context(
     min_score: float,
 ) -> list[SearchResult]:
     """Keep ranked evidence above threshold while respecting a token budget."""
-    # TODO: validate max_tokens, preserve ranking, and add only complete chunks
-    # that fit. Use format_context(candidate_results) with count_tokens so the
-    # separators and source labels are included in the budget.
-    raise NotImplementedError
+    if max_tokens < 1:
+        raise ValueError("max_tokens must be at least 1.")
+    if not math.isfinite(min_score):
+        raise ValueError("min_score must be a finite number.")
+
+    selected: list[SearchResult] = []
+    for result in ranked_results:
+        if result.score < min_score:
+            continue
+        candidate = [*selected, result]
+        if count_tokens(format_context(candidate)) <= max_tokens:
+            selected.append(result)
+    return selected
 
 
 def generate_grounded_answer(
@@ -61,10 +71,31 @@ def generate_grounded_answer(
     selected_results: list[SearchResult],
 ) -> GroundedAnswer:
     """Generate one structured answer constrained to the selected evidence."""
-    # TODO: call client.responses.parse with GroundedAnswer as text_format.
-    # The prompt must: use only supplied evidence, require verbatim citation
-    # quotes, and set answerable=false when the evidence is insufficient.
-    raise NotImplementedError
+    response = client.responses.parse(
+        model=GENERATION_MODEL,
+        input=[
+            {
+                "role": "system",
+                "content": (
+                    "Answer using only the supplied evidence. If it is insufficient, "
+                    "set answerable=false and explain that the corpus does not contain "
+                    "enough information. For every answerable response, provide one "
+                    "or more citations with the exact source and chunk_id shown in the "
+                    "evidence, and a short verbatim quote copied from that chunk. "
+                    "Do not invent or paraphrase citation quotes. Return no citations "
+                    "when answerable is false."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Question:\n{question}\n\nEvidence:\n{format_context(selected_results)}",
+            },
+        ],
+        text_format=GroundedAnswer,
+    )
+    if response.output_parsed is None:
+        raise RuntimeError("The model did not return a parsed answer.")
+    return response.output_parsed
 
 
 def validate_citations(
@@ -72,10 +103,31 @@ def validate_citations(
     selected_results: list[SearchResult],
 ) -> list[str]:
     """Return validation errors instead of trusting model citations blindly."""
-    # TODO: enforce citations for answerable answers, reject citations on an
-    # abstention, verify source + chunk_id pairs, and ensure each normalized
-    # quote occurs verbatim in the cited chunk.
-    raise NotImplementedError
+    errors: list[str] = []
+    chunks_by_identity = {
+        (result.chunk.source, result.chunk.chunk_id): result.chunk
+        for result in selected_results
+    }
+
+    if answer.answerable and not answer.citations:
+        errors.append("Answerable responses must include at least one citation.")
+    if not answer.answerable and answer.citations:
+        errors.append("Abstentions must not include citations.")
+
+    for citation in answer.citations:
+        chunk = chunks_by_identity.get((citation.source, citation.chunk_id))
+        if chunk is None:
+            errors.append(
+                f"Unknown source/chunk pair: {citation.source} / {citation.chunk_id}."
+            )
+            continue
+        normalized_quote = " ".join(citation.quote.split())
+        normalized_text = " ".join(chunk.text.split())
+        if not normalized_quote or normalized_quote not in normalized_text:
+            errors.append(
+                f"Citation quote does not occur in {citation.source} / {citation.chunk_id}."
+            )
+    return errors
 
 
 def parse_args() -> argparse.Namespace:
@@ -114,6 +166,7 @@ def main() -> None:
 
     print("\nVALIDATION")
     print("PASS" if not errors else "FAIL")
+    print("VALIDATED GROUNDED ANSWER" if not errors else "UNVALIDATED MODEL ANSWER")
     for error in errors:
         print(f"- {error}")
 

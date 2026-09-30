@@ -7,6 +7,10 @@ This session turns semantic search into a complete RAG pipeline:
 Run every command from the repository root after `uv sync` and after creating
 a local `.env` file containing `OPENAI_API_KEY`.
 
+The exercises are implemented in the starter scripts. For a concise, step-by-step
+workflow in Portuguese, see [workflows.md](workflows.md). For visual code flows,
+see [workflows-mermaid.md](workflows-mermaid.md).
+
 ## 1. Run the complete baseline
 
 `01_rag_baseline.py` is complete. It loads four Markdown documents and converts
@@ -33,12 +37,12 @@ The later exercises use only the four Markdown documents to keep chunking compar
 ## 2. Compare chunking strategies
 
 `02_chunking_lab.py` keeps loading, embeddings, retrieval and the evaluation
-loop ready. Implement:
+loop ready. It implements:
 
 - `fixed_size_chunks`: sliding word windows with validated overlap and stable
   chunk IDs;
 - `structure_aware_chunks`: preserve Markdown headings as contextual headers,
-  while still splitting sections that exceed the size limit.
+  while still splitting sections that exceed the body word limit.
 
 Run the comparison:
 
@@ -72,8 +76,7 @@ The exercise is complete when:
 ## 3. Build grounded generation with a context budget
 
 `03_grounded_rag.py` loads the chunks exported by exercise 2 and provides the
-retrieval flow, CLI and output models.
-Implement:
+retrieval flow, CLI and output models. It implements:
 
 - `select_context`: apply a similarity threshold and fit evidence into a token
   budget without reordering the ranking;
