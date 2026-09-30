@@ -7,6 +7,9 @@ This session turns semantic search into a complete RAG pipeline:
 Run every command from the repository root after `uv sync` and after creating
 a local `.env` file containing `OPENAI_API_KEY`.
 
+For a diagram of the baseline and explanations of the expected behavior in
+exercises 2 and 3, see the [Session 4 guide](guia-da-sessao.md).
+
 ## 1. Run the complete baseline
 
 `01_rag_baseline.py` is complete. It loads four Markdown documents and converts
