@@ -45,14 +45,56 @@ def fixed_size_chunks(
 ) -> list[Chunk]:
     """Split documents into overlapping word windows with stable IDs."""
 
-    raise NotImplementedError
+    step = _validate_sizes(chunk_words, overlap_words)
+    chunks: list[Chunk] = []
+    for document in documents:
+        words = document.text.split()
+        for index, start in enumerate(range(0, len(words), step)):
+            window = words[start : start + chunk_words]
+            if not window:
+                continue
+            chunks.append(
+                Chunk(
+                    chunk_id=f"{document.source}::fixed-{index:03d}",
+                    source=document.source,
+                    title=document.title,
+                    text=" ".join(window),
+                )
+            )
+            if start + chunk_words >= len(words):
+                break
+    return chunks
 
 
 def structure_aware_chunks(
     documents: list[Document], chunk_words: int, overlap_words: int
 ) -> list[Chunk]:
     """Split by Markdown section, adding document and section headings."""
-    raise NotImplementedError
+
+    step = _validate_sizes(chunk_words, overlap_words)
+    chunks: list[Chunk] = []
+    for document in documents:
+        for section_index, (heading, body) in enumerate(markdown_sections(document)):
+            words = body.split()
+            for window_index, start in enumerate(range(0, len(words), step)):
+                window = words[start : start + chunk_words]
+                if not window:
+                    continue
+                prefix = f"Document: {document.title}\nSection: {heading}\n"
+                chunks.append(
+                    Chunk(
+                        chunk_id=(
+                            f"{document.source}::section-{section_index:02d}-"
+                            f"{window_index:03d}"
+                        ),
+                        source=document.source,
+                        title=heading,
+                        text=prefix + " ".join(window),
+                    )
+                )
+                if start + chunk_words >= len(words):
+                    break
+    return chunks
 
 
 def evaluate_strategy(
