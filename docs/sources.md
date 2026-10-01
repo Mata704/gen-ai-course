@@ -25,3 +25,24 @@ or attribute references inside teaching slides.
   and [advanced prompts](https://github.com/microsoft/generative-ai-for-beginners/tree/main/05-advanced-prompts)
   — exercise-design references. Licensed under
   [MIT](https://github.com/microsoft/generative-ai-for-beginners/blob/main/LICENSE).
+
+## Sessions 6–7 — Conversation, tools, and API boundary
+
+- [OpenAI: Function calling](https://developers.openai.com/api/docs/guides/function-calling)
+  — strict tool schemas, function-call outputs, `call_id`, multiple calls and
+  the tool-calling lifecycle.
+- [OpenAI: Conversation state](https://developers.openai.com/api/docs/guides/conversation-state)
+  — explicit history and API-managed conversation-state options.
+- [FastAPI: Response models](https://fastapi.tiangolo.com/tutorial/response-model/)
+  — typed public response contracts.
+- [FastAPI: Testing](https://fastapi.tiangolo.com/tutorial/testing/)
+  — endpoint tests through `TestClient`.
+
+## Session 8 — Containers and integration
+
+- [uv: Using uv in Docker](https://docs.astral.sh/uv/guides/integration/docker/)
+  — locked dependency installation and Docker layer patterns.
+- [Docker: Optimize build cache](https://docs.docker.com/build/cache/optimize/)
+  — ordering layers and reducing the build context.
+- [Docker Compose: Control startup order](https://docs.docker.com/compose/how-tos/startup-order/)
+  — health-based service dependencies.

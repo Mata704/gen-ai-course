@@ -13,7 +13,9 @@ material close to the concepts taught in each class.
 - [`sessions/03-embeddings-semantic-search/`](sessions/03-embeddings-semantic-search/) — embeddings, evaluated semantic search, and metadata-filtered vector search.
 - [`sessions/04-rag-pipeline/`](sessions/04-rag-pipeline/) — end-to-end RAG, chunking experiments, context budgets, grounding, and citation validation.
 - [`sessions/05-advanced-rag-evaluation/`](sessions/05-advanced-rag-evaluation/) — RAG evaluation, hybrid retrieval, regression analysis, and quality gates.
-- [`sessions/06-conversational-ai/`](sessions/06-conversational-ai/) — multi-turn history, context-window management, conversational RAG, and session isolation.
+- [`sessions/06-conversational-ai/`](sessions/06-conversational-ai/) — conversational RAG, strict tool calling, and a bounded agent loop over retrieval and a read-only tool.
+- [`sessions/07-agent-api/`](sessions/07-agent-api/) — robust tool execution, typed FastAPI endpoints, and an HTTP client with explicit failure handling.
+- [`sessions/08-container-integration/`](sessions/08-container-integration/) — Docker, Compose, runtime secrets, health checks, and end-to-end validation.
 
 ## Getting started
 
