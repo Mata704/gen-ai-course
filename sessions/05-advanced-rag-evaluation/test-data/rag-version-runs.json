@@ -1,6 +1,7 @@
 [
   {
     "id": "landing-exact-identifier",
+    "question": "Which mission visited Surveyor 3?",
     "critical": false,
     "should_answer": true,
     "expected_sources": ["02-first-lunar-landings.md"],
@@ -24,6 +25,7 @@
   },
   {
     "id": "incident-lifeboat",
+    "question": "Why was Apollo 13's landing aborted, and how did the crew use the lunar module?",
     "critical": true,
     "should_answer": true,
     "expected_sources": ["03-apollo-13-incident.md"],
@@ -47,6 +49,7 @@
   },
   {
     "id": "surface-rover-distance",
+    "question": "Which mission first used the lunar rover, and how far did it travel?",
     "critical": false,
     "should_answer": true,
     "expected_sources": ["04-later-surface-exploration.md"],
@@ -70,6 +73,7 @@
   },
   {
     "id": "surface-final-mission",
+    "question": "What made Apollo 17 notable, and how much lunar material did it collect?",
     "critical": true,
     "should_answer": true,
     "expected_sources": ["04-later-surface-exploration.md"],
@@ -93,6 +97,7 @@
   },
   {
     "id": "absent-apollo-14",
+    "question": "Which experiments did Apollo 14 deploy on the lunar surface?",
     "critical": true,
     "should_answer": false,
     "expected_sources": [],
@@ -116,6 +121,7 @@
   },
   {
     "id": "absent-mars",
+    "question": "Which Apollo mission landed on Mars?",
     "critical": true,
     "should_answer": false,
     "expected_sources": [],

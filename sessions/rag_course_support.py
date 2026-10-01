@@ -61,6 +61,7 @@ class EvaluationCase:
     case_id: str
     question: str
     expected_sources: tuple[str, ...]
+    expected_sections: tuple[str, ...]
     expected_facts: tuple[str, ...]
     should_answer: bool
     critical: bool
@@ -129,6 +130,7 @@ def load_evaluation_cases(path: Path = EVALUATION_FILE) -> list[EvaluationCase]:
             case_id=item["id"],
             question=item["question"],
             expected_sources=tuple(item["expected_sources"]),
+            expected_sections=tuple(item.get("expected_sections", [])),
             expected_facts=tuple(item["expected_facts"]),
             should_answer=item["should_answer"],
             critical=item["critical"],

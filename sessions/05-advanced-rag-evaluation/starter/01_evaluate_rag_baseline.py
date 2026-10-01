@@ -101,8 +101,13 @@ def run_case(
 
     return {
         "case_id": case.case_id,
+        "question": case.question,
         "critical": case.critical,
         "category": case.category,
+        "expected_sources": list(case.expected_sources),
+        "expected_sections": list(case.expected_sections),
+        "expected_facts": list(case.expected_facts),
+        "should_answer": case.should_answer,
         "retrieval_source_recall": source_recall(results, case.expected_sources),
         "fact_coverage": fact_coverage(answer.answer, case.expected_facts),
         "answerability_correct": float(answer.answerable == case.should_answer),
@@ -114,6 +119,29 @@ def run_case(
         "cited_sources": answer.sources,
         "answer": answer.answer,
     }
+
+
+def render_report(rows: list[dict], split: str) -> str:
+    lines = [
+        f"# RAG baseline — {split}", "",
+        "Questions and expected results come from `data/evaluations/rag_cases.json`.",
+    ]
+    for row in rows:
+        lines.extend([
+            "", f"## {row['case_id']}", "",
+            f"- **Question:** {row['question']}",
+            f"- **Expected sources:** {', '.join(row['expected_sources']) or 'none'}",
+            f"- **Expected sections:** {', '.join(row['expected_sections']) or 'none'}",
+            f"- **Expected facts:** {', '.join(row['expected_facts']) or 'none'}",
+            f"- **Retrieved sources:** {', '.join(row['retrieved_sources']) or 'none'}",
+            f"- **Cited sources:** {', '.join(row['cited_sources']) or 'none'}",
+            f"- **Answer:** {row['answer']}", "",
+            "| Source recall | Fact coverage | Answerability | Citation validity |",
+            "|---:|---:|---:|---:|",
+            f"| {row['retrieval_source_recall']:.2f} | {row['fact_coverage']:.2f} | "
+            f"{row['answerability_correct']:.0f} | {row['citation_validity']:.0f} |",
+        ])
+    return "\n".join(lines) + "\n"
 
 
 def print_summary(rows: list[dict]) -> None:
@@ -161,8 +189,12 @@ def main() -> None:
     for case in cases:
         row = run_case(client, case, chunks, chunk_embeddings, args.top_k)
         rows.append(row)
+        print(f"\n[{row['case_id']}] {row['question']}")
+        print(f"retrieved: {', '.join(row['retrieved_sources']) or 'none'}")
+        print(f"cited: {', '.join(row['cited_sources']) or 'none'}")
+        print(f"answer: {row['answer']}")
         print(
-            f"[{row['case_id']}] retrieval={row['retrieval_source_recall']:.2f} "
+            f"metrics: retrieval={row['retrieval_source_recall']:.2f} "
             f"facts={row['fact_coverage']:.2f} answerability={row['answerability_correct']:.0f} "
             f"citations={row['citation_validity']:.0f}"
         )
@@ -171,9 +203,11 @@ def main() -> None:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+        markdown_path = args.output.with_suffix(".md")
+        markdown_path.write_text(render_report(rows, args.split), encoding="utf-8")
         print(f"\nWrote {args.output}")
+        print(f"Wrote {markdown_path}")
 
 
 if __name__ == "__main__":
     main()
-

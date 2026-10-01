@@ -22,7 +22,7 @@ from session_05_support import (  # noqa: E402
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--split", choices=("development", "holdout"), default="development")
-    parser.add_argument("--top-k", type=int, default=3)
+    parser.add_argument("--top-k", type=int, default=2)
     args = parser.parse_args()
     if args.top_k < 1:
         parser.error("--top-k must be at least 1")

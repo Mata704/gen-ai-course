@@ -18,13 +18,17 @@ from rag_course_support import (
     markdown_sections,
     normalize_terms,
     rank_by_embedding,
-    source_recall,
 )
+
+
+SESSION_DIR = Path(__file__).resolve().parent / "05-advanced-rag-evaluation"
 
 
 def _section_chunks() -> list[Chunk]:
     chunks = []
-    for document in load_documents():
+    documents = load_documents()
+    documents.extend(load_documents(SESSION_DIR / "test-data" / "retrieval-distractors"))
+    for document in documents:
         for index, (heading, body) in enumerate(markdown_sections(document)):
             chunks.append(Chunk(
                 chunk_id=f"{document.source}::section-{index:02d}",
@@ -103,33 +107,96 @@ def render_retrieval_report(comparisons: list[dict], split: str, top_k: int) -> 
     lines = [
         f"# Hybrid retrieval comparison — {split}", "",
         f"All methods use the same final top_k: **{top_k}**.",
+        "Questions and expected sources come from `data/evaluations/rag_cases.json`.",
+        "Session-specific distractor chunks make ranking errors visible without changing earlier sessions.",
+        "This exercise evaluates retrieval only: it does not generate answers or citations.",
     ]
-    recalls = {method: [] for method in ("semantic", "lexical", "hybrid")}
+    methods = ("semantic", "lexical", "hybrid")
+    hit_at_one = {method: [] for method in methods}
+    recalls = {method: [] for method in methods}
+    first_ranks = {method: [] for method in methods}
     for comparison in comparisons:
         case = comparison["case"]
-        expected = set(case.expected_sources)
+        expected_sources = set(case.expected_sources)
+        expected_sections = set(case.expected_sections)
         lines.extend([
             "", f"## {case.case_id}", "", case.question, "",
-            f"Expected source: {', '.join(expected) if expected else 'none (test abstention)'}", "",
-            "| Method | Rank | Source | Section | Preview | Source found? |",
+            f"Expected source: {', '.join(expected_sources) if expected_sources else 'none (test abstention)'}",
+            f"Expected section: {', '.join(expected_sections) if expected_sections else 'none'}", "",
+            "Generated answer: **N/A — retrieval-only exercise**", "",
+            "Cited sources: **N/A — retrieval-only exercise**", "",
+            "| Method | Rank | Source | Section | Preview | Relevant section? |",
             "|---|---:|---|---|---|---|",
         ])
         for method, results in comparison["rankings"].items():
-            found = "n/a" if not expected else (
-                "yes" if expected & {result.chunk.source for result in results} else "no"
-            )
-            if expected:
-                recalls[method].append(source_recall(results, expected))
+            relevant = [
+                result.chunk.source in expected_sources
+                and result.chunk.title in expected_sections
+                for result in results
+            ]
+            if expected_sections:
+                retrieved_sections = {
+                    result.chunk.title
+                    for result in results
+                    if result.chunk.source in expected_sources
+                }
+                hit_at_one[method].append(float(bool(relevant) and relevant[0]))
+                recalls[method].append(
+                    len(expected_sections & retrieved_sections) / len(expected_sections)
+                )
+                first_ranks[method].append(next(
+                    (rank for rank, is_relevant in enumerate(relevant, start=1) if is_relevant),
+                    top_k + 1,
+                ))
             for rank, result in enumerate(results, start=1):
                 title = result.chunk.title.replace("|", "/")
                 preview = " ".join(result.chunk.text.split())[:90].replace("|", "/")
-                lines.append(
-                    f"| {method} | {rank} | {result.chunk.source} | {title} | {preview} | {found} |"
+                relevant_label = "n/a" if not expected_sections else (
+                    "yes" if relevant[rank - 1] else "no"
                 )
+                lines.append(
+                    f"| {method} | {rank} | {result.chunk.source} | {title} | {preview} | {relevant_label} |"
+                )
+    summary = {}
+    for method in methods:
+        summary[method] = {
+            "hit_at_one": sum(hit_at_one[method]) / len(hit_at_one[method]),
+            "section_recall": sum(recalls[method]) / len(recalls[method]),
+            "mean_rank": sum(first_ranks[method]) / len(first_ranks[method]),
+        }
+    best_hit = max(values["hit_at_one"] for values in summary.values())
+    best_recall = max(values["section_recall"] for values in summary.values())
+    best_rank = min(values["mean_rank"] for values in summary.values())
+    best_score = max(
+        (values["hit_at_one"], values["section_recall"], -values["mean_rank"])
+        for values in summary.values()
+    )
+    winners = [
+        method for method, values in summary.items()
+        if (values["hit_at_one"], values["section_recall"], -values["mean_rank"])
+        == best_score
+    ]
     lines.extend([
-        "", "## Answerable cases: mean source recall", "",
-        "| Semantic | Lexical | Hybrid |", "|---:|---:|---:|",
-        "| " + " | ".join(f"{sum(values) / len(values):.3f}" for values in recalls.values()) + " |",
+        "", "## Answerable cases: ranking quality", "",
+        "| Method | Correct section at rank 1 | Section recall@k | Mean first relevant rank¹ |",
+        "|---|---:|---:|---:|",
+    ])
+    for method, values in summary.items():
+        hit = f"{values['hit_at_one']:.3f}"
+        recall = f"{values['section_recall']:.3f}"
+        rank = f"{values['mean_rank']:.2f}"
+        if values["hit_at_one"] == best_hit:
+            hit = f"**{hit}**"
+        if values["section_recall"] == best_recall:
+            recall = f"**{recall}**"
+        if values["mean_rank"] == best_rank:
+            rank = f"**{rank}**"
+        lines.append(f"| {method} | {hit} | {recall} | {rank} |")
+    lines.extend([
+        "", f"**Best overall on this split:** {', '.join(winners)}.",
+        "",
+        "Bold values are the best result for each metric. A lower mean rank is better.",
+        f"¹ A miss is counted as rank {top_k + 1}.",
         "", "## Questions", "",
         "1. Which method found the most useful chunks? Show one example.",
         "2. Would you use semantic, lexical or hybrid retrieval? Why?",
@@ -150,7 +217,16 @@ def compare_rag_versions(cases: list[dict]) -> dict:
             answer = " ".join(run["answer"].casefold().split())
             citations = set(run["citations"])
             rows.append({
-                "case_id": case["id"], "version": version, "critical": case["critical"],
+                "case_id": case["id"],
+                "question": case["question"],
+                "version": version,
+                "critical": case["critical"],
+                "should_answer": case["should_answer"],
+                "expected_sources": case["expected_sources"],
+                "expected_facts": case["expected_facts"],
+                "retrieved_sources": run["retrieved_sources"],
+                "cited_sources": run["citations"],
+                "answer": run["answer"],
                 "retrieval_recall": (
                     len(expected_sources & retrieved_sources) / len(expected_sources)
                     if expected_sources else 1.0
@@ -245,16 +321,25 @@ def render_version_report(report: dict, source_cases: list[dict]) -> str:
             f"| {regression['case_id']} | {'yes' if regression['critical'] else 'no'} | "
             f"{regression['metric']} | {regression['baseline']:.3f} | {regression['candidate']:.3f} |"
         )
-    lines.extend(["", "## Answers and citations to inspect", ""])
-    regressed_ids = {item["case_id"] for item in report["regressions"]}
+    lines.extend([
+        "", "## Case details", "",
+        "Questions and expected results come from `test-data/rag-version-runs.json`.", "",
+    ])
     for case in source_cases:
-        if case["id"] in regressed_ids:
-            lines.extend([
-                f"### {case['id']}", "",
-                f"- Baseline: {case['baseline']['answer']}",
-                f"- Candidate: {case['candidate']['answer']}",
-                f"- Candidate citations: {', '.join(case['candidate']['citations']) or 'none'}", "",
-            ])
+        lines.extend([
+            f"### {case['id']}", "",
+            f"- **Question:** {case['question']}",
+            f"- **Expected sources:** {', '.join(case['expected_sources']) or 'none'}",
+            f"- **Expected facts:** {', '.join(case['expected_facts']) or 'none'}", "",
+            "**Baseline**", "",
+            f"- Retrieved sources: {', '.join(case['baseline']['retrieved_sources']) or 'none'}",
+            f"- Cited sources: {', '.join(case['baseline']['citations']) or 'none'}",
+            f"- Answer: {case['baseline']['answer']}", "",
+            "**Candidate**", "",
+            f"- Retrieved sources: {', '.join(case['candidate']['retrieved_sources']) or 'none'}",
+            f"- Cited sources: {', '.join(case['candidate']['citations']) or 'none'}",
+            f"- Answer: {case['candidate']['answer']}", "",
+        ])
     lines.extend([
         "Citation validity only checks whether the cited file was retrieved. It does not prove that the file supports the claim.",
         "", "## Questions", "",
