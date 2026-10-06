@@ -136,8 +136,59 @@ def run_agent_loop(
     timelines: dict[str, Timeline],
     max_steps: int = 3,
 ) -> tuple[str, list[str]]:
-    """Run tools until the model answers or the explicit step limit is reached."""
-    raise NotImplementedError
+    if not question.strip():
+        raise ValueError("question cannot be empty.")
+    if max_steps < 1:
+        raise ValueError("max_steps must be at least 1.")
+
+    model_input: list[Any] = [
+        *history[-6:],
+        {"role": "user", "content": question.strip()},
+    ]
+    trace: list[str] = []
+
+    for _ in range(max_steps):
+        response = client.responses.create(
+            model=GENERATION_MODEL,
+            instructions=(
+                "You are a concise Apollo assistant. Use search_documents for "
+                "narrative facts and cite returned source filenames. Use "
+                "get_mission_timeline for exact dates. Use recent history only to "
+                "resolve follow-ups. Ask for clarification if the mission is unclear."
+            ),
+            input=model_input,
+            tools=TOOLS,
+            parallel_tool_calls=False,
+            store=False,
+        )
+        model_input.extend(response.output)
+        calls = [item for item in response.output if item.type == "function_call"]
+
+        if not calls:
+            answer = response.output_text.strip()
+            if not answer:
+                raise RuntimeError("The model stopped without a final answer.")
+            history.extend(
+                [
+                    {"role": "user", "content": question.strip()},
+                    {"role": "assistant", "content": answer},
+                ]
+            )
+            return answer, trace
+
+        for call in calls:
+            trace.append(call.name)
+            model_input.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": call.call_id,
+                    "output": execute_tool_call(
+                        call, client, chunks, chunk_embeddings, timelines
+                    ),
+                }
+            )
+
+    raise RuntimeError(f"The agent did not finish within {max_steps} steps.")
 
 
 def main() -> None:
