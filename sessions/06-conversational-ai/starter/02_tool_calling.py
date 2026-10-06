@@ -82,7 +82,49 @@ def answer_with_tool(
     timelines: dict[str, Timeline],
 ) -> tuple[str, list[str]]:
     """Let the model call the local tool, then produce the final answer."""
-    raise NotImplementedError
+    if not question.strip():
+        raise ValueError("question cannot be empty.")
+
+    tool = build_tool_definition()
+    model_input: list[Any] = [{"role": "user", "content": question.strip()}]
+
+    first_response = client.responses.create(
+        model=GENERATION_MODEL,
+        instructions=(
+            "You answer Apollo questions concisely. Use get_mission_timeline for "
+            "exact launch, landing, or splashdown dates."
+        ),
+        input=model_input,
+        tools=[tool],
+        parallel_tool_calls=False,
+        store=False,
+    )
+
+    model_input.extend(first_response.output)
+
+    calls = [item for item in first_response.output if item.type == "function_call"]
+    if not calls:
+        return first_response.output_text.strip(), []
+
+    for call in calls:
+        model_input.append(
+            {
+                "type": "function_call_output",
+                "call_id": call.call_id,
+                "output": execute_tool_call(call, timelines),
+            }
+        )
+
+    final_response = client.responses.create(
+        model=GENERATION_MODEL,
+        instructions="Answer concisely from the tool result. Explain tool errors plainly.",
+        input=model_input,
+        tools=[tool],
+        tool_choice="none",
+        parallel_tool_calls=False,
+        store=False,
+    )
+    return final_response.output_text.strip(), [call.name for call in calls]
 
 
 def main() -> None:
