@@ -1,4 +1,4 @@
-"""Complete Session 8 baseline: inspect container runtime prerequisites safely."""
+"""Report local runtime prerequisites."""
 
 from __future__ import annotations
 
@@ -53,18 +53,11 @@ def inspect_runtime() -> dict:
 def main() -> None:
     report = inspect_runtime()
     print(json.dumps(report, indent=2))
-    print("\nThe API key value is intentionally never printed or copied into an image.")
     ready = (
         report["docker_engine_ready"] and report["api_key_configured"]
         and report["api_url_valid"] and not report["missing_files"]
     )
-    if report["missing_files"]:
-        print("Fix the missing files before building the image.")
-    elif not report["docker_engine_ready"]:
-        print("Install or start Docker before the container exercises.")
-    else:
-        print("Local checks passed. This does not test the API key or a real AI request." if ready
-              else "Check the API key configuration and API URL before continuing.")
+    print(f"\nRuntime checks: {'PASS' if ready else 'FAIL'}")
     raise SystemExit(0 if ready else 1)
 
 

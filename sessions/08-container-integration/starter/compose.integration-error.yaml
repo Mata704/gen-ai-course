@@ -1,4 +1,3 @@
-# Prepared diagnostic scenario for exercise 3. No missing implementation.
 services:
   ui:
     environment:

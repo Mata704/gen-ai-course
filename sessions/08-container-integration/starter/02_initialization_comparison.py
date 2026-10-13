@@ -1,4 +1,4 @@
-"""Exercise 2: compare preparing a service per request with reusing it."""
+"""Run requests in two service modes."""
 
 import argparse
 import time
@@ -25,7 +25,6 @@ def compare(mode: str) -> None:
             service = ObservedAgentService()
             preparations += 1
         print(f"\nQuestion {number}: {question}", flush=True)
-        # Separate conversations: only service preparation is being compared.
         reply = service.chat(str(uuid.uuid4()), question)
         seconds = time.perf_counter() - started
         print(f"Answer: {reply.answer}\nTools: {reply.tools_used}\nTrace: {reply.trace}")
@@ -37,7 +36,6 @@ def compare(mode: str) -> None:
     for number, service_id, prepared_now, seconds in rows:
         print(f"| {number} | {service_id} | {prepared_now} | {seconds:.2f} |")
     print(f"Document embedding batches: {preparations}")
-    print("Compare PREPARE events first. LLM latency and answers can vary.")
 
 
 def main() -> None:

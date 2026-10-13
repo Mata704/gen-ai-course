@@ -1,4 +1,4 @@
-"""Exercise 3: inspect API behaviour and UI reachability, not browser interaction."""
+"""Run API and UI checks."""
 
 import argparse
 import uuid
@@ -38,10 +38,7 @@ def main() -> None:
                 response.raise_for_status()
                 print(f"\nSession reset: {response.json()['cleared']}")
             except (httpx.HTTPError, ValueError, KeyError) as exc:
-                print(f"\nCleanup failed separately: {exc}")
-    print("\nDirect API checks passed; UI page is reachable.")
-    print("NOT TESTED: submitting a question through the UI, or factual correctness.")
-    print("Now send a question in the browser and compare the result.")
+                print(f"\nSession reset failed: {exc}")
 
 
 if __name__ == "__main__":

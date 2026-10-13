@@ -1,4 +1,4 @@
-"""Exercise 4: inspect the same session before and after restarting only the API."""
+"""Report session state."""
 
 import argparse
 
@@ -21,16 +21,10 @@ def main() -> None:
         print(f"| {state['runtime_id']} | {state['service_id']} | {state['session_exists']} | {state['history_messages']} |")
         if args.phase == "before":
             if not state["history_messages"]:
-                raise RuntimeError("First ask about Apollo 13 in the UI and copy that session ID.")
-            print("Keep the browser open. Restart ONLY the API, then run the after phase.")
+                raise RuntimeError("No history messages found for the supplied session_id in phase 'before'.")
             return
         if state["history_messages"]:
-            raise RuntimeError("History is still present. Restart only the API and retry before sending another question.")
-        print("The API has no history for this ID. Compare with the messages still visible in the UI.")
-        print("In the UI, try 'When did that mission launch and splash down?'.")
-        print("Then try 'When did Apollo 13 launch and splash down?'.")
-        print("Compare answers and the history count shown with each response.")
-        print("A model can guess the mission; a plausible answer does NOT prove history survived.")
+            raise RuntimeError(f"Unexpected history_messages in phase 'after': {state['history_messages']}.")
 
 
 if __name__ == "__main__":
