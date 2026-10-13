@@ -1,0 +1,5 @@
+# Prepared diagnostic scenario for exercise 3. No missing implementation.
+services:
+  ui:
+    environment:
+      COPILOT_API_URL: http://localhost:8000

@@ -1,0 +1,12 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+.env
+.env.*
+private
+.chroma
+sessions/04-rag-pipeline/chunks
+sessions/05-advanced-rag-evaluation/reports
+sessions/05-advanced-rag-evaluation/reports-solution

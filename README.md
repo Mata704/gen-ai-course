@@ -15,7 +15,7 @@ material close to the concepts taught in each class.
 - [`sessions/05-advanced-rag-evaluation/`](sessions/05-advanced-rag-evaluation/) — RAG evaluation, hybrid retrieval, regression analysis, and quality gates.
 - [`sessions/06-conversational-ai/`](sessions/06-conversational-ai/) — conversational RAG, strict tool calling, and a bounded agent loop over retrieval and a read-only tool.
 - [`sessions/07-agent-api/`](sessions/07-agent-api/) — robust tool execution, typed FastAPI endpoints, and an HTTP client with explicit failure handling.
-- [`sessions/08-container-integration/`](sessions/08-container-integration/) — Docker, Compose, runtime secrets, health checks, and end-to-end validation.
+- [`sessions/08-container-integration/`](sessions/08-container-integration/) — complete experiments: preflight, preparation versus reuse, API/UI diagnosis, and history loss after restart.
 
 ## Getting started
 
