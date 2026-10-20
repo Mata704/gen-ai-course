@@ -6,11 +6,11 @@ material close to the concepts taught in each class.
 
 ## Structure
 
-- [`docs/pre-work.md`](docs/pre-work.md) — participant setup before Session 1.
-- [`docs/sources.md`](docs/sources.md) — technical sources used to create the material.
-- [`docs/course-02-resources.md`](docs/course-02-resources.md) — recommended reading for Course 2, grouped by topic and session.
-- [`sessions/01-llm-apis/`](sessions/01-llm-apis/) — Session 1 plan and, later, its code.
-- [`sessions/02-prompting-structured-outputs/`](sessions/02-prompting-structured-outputs/) — Session 2 plan and, later, its code.
+- [`docs/pre-work.md`](docs/pre-work.md) — initial environment setup.
+- [`docs/course-01-pre-reads.md`](docs/course-01-pre-reads.md) — Course 1 reading and references, grouped by topic.
+- [`docs/course-02-pre-reads.md`](docs/course-02-pre-reads.md) — Course 2 reading and references, grouped by topic.
+- [`sessions/01-llm-apis/`](sessions/01-llm-apis/) — LLM API calls, streaming, and Q&A exercises.
+- [`sessions/02-prompting-structured-outputs/`](sessions/02-prompting-structured-outputs/) — prompting, structured outputs, and intent classification.
 - [`sessions/03-embeddings-semantic-search/`](sessions/03-embeddings-semantic-search/) — embeddings, evaluated semantic search, and metadata-filtered vector search.
 - [`sessions/04-rag-pipeline/`](sessions/04-rag-pipeline/) — end-to-end RAG, chunking experiments, context budgets, grounding, and citation validation.
 - [`sessions/05-advanced-rag-evaluation/`](sessions/05-advanced-rag-evaluation/) — RAG evaluation, hybrid retrieval, regression analysis, and quality gates.

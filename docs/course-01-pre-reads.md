@@ -1,10 +1,9 @@
-# Technical sources
+# Course 1 — Pre-reads
 
-These sources guide the implementation of our examples. Course material will
-use adapted, course-specific exercises; it will not reproduce external lessons
-or attribute references inside teaching slides.
+Optional reading and reference material, grouped by topic. You do not need to
+read everything before class.
 
-## Session 1 — LLMs and APIs
+## LLMs and APIs
 
 - [OpenAI Python SDK](https://github.com/openai/openai-python) — official client,
   API usage, and streaming patterns. Licensed under
@@ -14,7 +13,7 @@ or attribute references inside teaching slides.
 - [OpenAI Cookbook: counting tokens](https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb)
   — token-estimation exercise reference.
 
-## Session 2 — Prompting and structured outputs
+## Prompting and structured outputs
 
 - [OpenAI Python SDK: structured outputs example](https://github.com/openai/openai-python/blob/main/examples/responses/structured_outputs.py)
   — Pydantic-based typed output reference.
@@ -26,7 +25,7 @@ or attribute references inside teaching slides.
   — exercise-design references. Licensed under
   [MIT](https://github.com/microsoft/generative-ai-for-beginners/blob/main/LICENSE).
 
-## Sessions 6–7 — Conversation, tools, and API boundary
+## Conversation, tools, and API integration
 
 - [OpenAI: Function calling](https://developers.openai.com/api/docs/guides/function-calling)
   — strict tool schemas, function-call outputs, `call_id`, multiple calls and
@@ -38,7 +37,7 @@ or attribute references inside teaching slides.
 - [FastAPI: Testing](https://fastapi.tiangolo.com/tutorial/testing/)
   — endpoint tests through `TestClient`.
 
-## Session 8 — Containers and integration
+## Containers and integration
 
 - [uv: Using uv in Docker](https://docs.astral.sh/uv/guides/integration/docker/)
   — locked dependency installation and Docker layer patterns.
