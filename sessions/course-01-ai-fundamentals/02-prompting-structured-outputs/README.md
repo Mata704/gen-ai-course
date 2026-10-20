@@ -8,8 +8,8 @@ for the second three-hour class.
 From the repository root, after `uv sync` and creating a local `.env` file:
 
 ```text
-uv run python sessions/02-prompting-structured-outputs/starter/01_prompt_lab.py
-uv run python sessions/02-prompting-structured-outputs/starter/02_structured_output.py
+uv run python sessions/course-01-ai-fundamentals/02-prompting-structured-outputs/starter/01_prompt_lab.py
+uv run python sessions/course-01-ai-fundamentals/02-prompting-structured-outputs/starter/02_structured_output.py
 ```
 
 `03_intent_classifier.py` is a challenge file and runs after its marked
@@ -18,7 +18,7 @@ functions are implemented.
 The complete instructor reference remains separate from the challenge:
 
 ```text
-uv run python sessions/02-prompting-structured-outputs/reference/intent_classifier.py
+uv run python sessions/course-01-ai-fundamentals/02-prompting-structured-outputs/reference/intent_classifier.py
 ```
 
 Material:
@@ -49,12 +49,12 @@ package or credential troubleshooting.
 The deterministic tests do not call the API and do not require an API key:
 
 ```text
-uv run python -m unittest discover -s sessions/02-prompting-structured-outputs/tests -v
+uv run python -m unittest discover -s sessions/course-01-ai-fundamentals/02-prompting-structured-outputs/tests -v
 ```
 
 The evaluation runner calls the API once per case and reports a validation
 rate:
 
 ```text
-uv run python sessions/02-prompting-structured-outputs/evals/run_intent_eval.py
+uv run python sessions/course-01-ai-fundamentals/02-prompting-structured-outputs/evals/run_intent_eval.py
 ```

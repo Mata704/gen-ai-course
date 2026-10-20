@@ -6,17 +6,40 @@ material close to the concepts taught in each class.
 
 ## Structure
 
+```text
+gen-ai-course/
+├── docs/                 setup and pre-reads
+├── sessions/
+│   ├── course-01-ai-fundamentals/   one folder per session
+│   └── course-02-agentic-ai/        one folder per session
+├── projects/
+│   ├── course-01-ai-fundamentals/   evolving project (Knowledge Copilot)
+│   └── course-02-agentic-ai/        evolving project (Meridian Exchange incident response)
+└── private/              trainer material and solutions (not committed)
+```
+
+### Docs
+
 - [`docs/pre-work.md`](docs/pre-work.md) — initial environment setup.
 - [`docs/course-01-pre-reads.md`](docs/course-01-pre-reads.md) — Course 1 reading and references, grouped by topic.
 - [`docs/course-02-pre-reads.md`](docs/course-02-pre-reads.md) — Course 2 reading and references, grouped by topic.
-- [`sessions/01-llm-apis/`](sessions/01-llm-apis/) — LLM API calls, streaming, and Q&A exercises.
-- [`sessions/02-prompting-structured-outputs/`](sessions/02-prompting-structured-outputs/) — prompting, structured outputs, and intent classification.
-- [`sessions/03-embeddings-semantic-search/`](sessions/03-embeddings-semantic-search/) — embeddings, evaluated semantic search, and metadata-filtered vector search.
-- [`sessions/04-rag-pipeline/`](sessions/04-rag-pipeline/) — end-to-end RAG, chunking experiments, context budgets, grounding, and citation validation.
-- [`sessions/05-advanced-rag-evaluation/`](sessions/05-advanced-rag-evaluation/) — RAG evaluation, hybrid retrieval, regression analysis, and quality gates.
-- [`sessions/06-conversational-ai/`](sessions/06-conversational-ai/) — conversational RAG, strict tool calling, and a bounded agent loop over retrieval and a read-only tool.
-- [`sessions/07-agent-api/`](sessions/07-agent-api/) — robust tool execution, typed FastAPI endpoints, and an HTTP client with explicit failure handling.
-- [`sessions/08-container-integration/`](sessions/08-container-integration/) — complete experiments: preflight, preparation versus reuse, API/UI diagnosis, and history loss after restart.
+
+### Course 1 — AI Fundamentals
+
+- [`sessions/course-01-ai-fundamentals/01-llm-apis/`](sessions/course-01-ai-fundamentals/01-llm-apis/) — LLM API calls, streaming, and Q&A exercises.
+- [`sessions/course-01-ai-fundamentals/02-prompting-structured-outputs/`](sessions/course-01-ai-fundamentals/02-prompting-structured-outputs/) — prompting, structured outputs, and intent classification.
+- [`sessions/course-01-ai-fundamentals/03-embeddings-semantic-search/`](sessions/course-01-ai-fundamentals/03-embeddings-semantic-search/) — embeddings, evaluated semantic search, and metadata-filtered vector search.
+- [`sessions/course-01-ai-fundamentals/04-rag-pipeline/`](sessions/course-01-ai-fundamentals/04-rag-pipeline/) — end-to-end RAG, chunking experiments, context budgets, grounding, and citation validation.
+- [`sessions/course-01-ai-fundamentals/05-advanced-rag-evaluation/`](sessions/course-01-ai-fundamentals/05-advanced-rag-evaluation/) — RAG evaluation, hybrid retrieval, regression analysis, and quality gates.
+- [`sessions/course-01-ai-fundamentals/06-conversational-ai/`](sessions/course-01-ai-fundamentals/06-conversational-ai/) — conversational RAG, strict tool calling, and a bounded agent loop over retrieval and a read-only tool.
+- [`sessions/course-01-ai-fundamentals/07-agent-api/`](sessions/course-01-ai-fundamentals/07-agent-api/) — robust tool execution, typed FastAPI endpoints, and an HTTP client with explicit failure handling.
+- [`sessions/course-01-ai-fundamentals/08-container-integration/`](sessions/course-01-ai-fundamentals/08-container-integration/) — complete experiments: preflight, preparation versus reuse, API/UI diagnosis, and history loss after restart.
+- [`projects/course-01-ai-fundamentals/`](projects/course-01-ai-fundamentals/) — the evolving Course 1 project.
+
+### Course 2 — Agentic AI
+
+- [`sessions/course-02-agentic-ai/`](sessions/course-02-agentic-ai/) — session material, added session by session.
+- [`projects/course-02-agentic-ai/`](projects/course-02-agentic-ai/) — the evolving Course 2 project.
 
 ## Getting started
 
@@ -38,7 +61,7 @@ not commit that file.
 Run an exercise from the repository root with `uv run`, for example:
 
 ```text
-uv run python sessions/01-llm-apis/starter/01_first_call.py
+uv run python sessions/course-01-ai-fundamentals/01-llm-apis/starter/01_first_call.py
 ```
 
 ## Principles

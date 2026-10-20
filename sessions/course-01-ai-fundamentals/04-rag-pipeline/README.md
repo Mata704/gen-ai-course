@@ -15,13 +15,13 @@ as one baseline chunk, stores the vectors in an ephemeral Chroma collection,
 retrieves evidence and asks the model for a structured answer with sources.
 
 ```bash
-uv run python sessions/04-rag-pipeline/starter/01_rag_baseline.py --query "Which lunar region did Apollo 16 explore?" --show-loaded-pdf
+uv run python sessions/course-01-ai-fundamentals/04-rag-pipeline/starter/01_rag_baseline.py --query "Which lunar region did Apollo 16 explore?" --show-loaded-pdf
 ```
 
 Use `--show-context` to inspect exactly what reached the model:
 
 ```bash
-uv run python sessions/04-rag-pipeline/starter/01_rag_baseline.py --query "Which lunar region did Apollo 16 explore?" --show-loaded-pdf --show-context
+uv run python sessions/course-01-ai-fundamentals/04-rag-pipeline/starter/01_rag_baseline.py --query "Which lunar region did Apollo 16 explore?" --show-loaded-pdf --show-context
 ```
 
 There is nothing to implement. Trace one question through all seven stages and
@@ -43,16 +43,16 @@ loop ready. Implement:
 Run the comparison:
 
 ```bash
-uv run python sessions/04-rag-pipeline/starter/02_chunking_lab.py --strategy both --chunk-words 90 --overlap-words 20
+uv run python sessions/course-01-ai-fundamentals/04-rag-pipeline/starter/02_chunking_lab.py --strategy both --chunk-words 90 --overlap-words 20
 ```
 
 Run one strategy at a time with `--strategy fixed` or `--strategy structure`.
 Add `--save-chunks` to save each strategy's chunks to Markdown in
-`sessions/04-rag-pipeline/chunks/`, grouped by document. Open the two files side
+`sessions/course-01-ai-fundamentals/04-rag-pipeline/chunks/`, grouped by document. Open the two files side
 by side to see where each strategy cut the text:
 
 ```bash
-uv run python sessions/04-rag-pipeline/starter/02_chunking_lab.py --strategy both --chunk-words 40 --overlap-words 10 --save-chunks
+uv run python sessions/course-01-ai-fundamentals/04-rag-pipeline/starter/02_chunking_lab.py --strategy both --chunk-words 40 --overlap-words 10 --save-chunks
 ```
 
 Try at least two configurations. This lab prints only `development` cases,
@@ -64,7 +64,7 @@ Export the strategy you choose for exercise 3. This example exports the
 structure-aware chunks to `.chroma/session-04-chunks.json`:
 
 ```bash
-uv run python sessions/04-rag-pipeline/starter/02_chunking_lab.py --strategy both --chunk-words 90 --overlap-words 20 --export-strategy structure
+uv run python sessions/course-01-ai-fundamentals/04-rag-pipeline/starter/02_chunking_lab.py --strategy both --chunk-words 90 --overlap-words 20 --export-strategy structure
 ```
 
 The exported file carries chunk text, source, title and stable ID. It is a
@@ -92,13 +92,13 @@ Implement:
   that do not occur in the cited chunk.
 
 ```bash
-uv run python sessions/04-rag-pipeline/starter/03_grounded_rag.py --query "How far did Apollo 15 travel with the rover?" --max-context-tokens 450
+uv run python sessions/course-01-ai-fundamentals/04-rag-pipeline/starter/03_grounded_rag.py --query "How far did Apollo 15 travel with the rover?" --max-context-tokens 450
 ```
 
 Test the abstention path:
 
 ```bash
-uv run python sessions/04-rag-pipeline/starter/03_grounded_rag.py --query "What experiments did Apollo 14 deploy?"
+uv run python sessions/course-01-ai-fundamentals/04-rag-pipeline/starter/03_grounded_rag.py --query "What experiments did Apollo 14 deploy?"
 ```
 
 The exercise is complete when:
@@ -118,5 +118,5 @@ the target and quote, but cannot prove every claim is true.
 - `data/rag-corpus/` contains four multi-section Apollo Markdown documents.
 - `data/rag-corpus-pdf/` contains a short Apollo 16 teaching PDF with a table.
 - `data/evaluations/rag_cases.json` contains development and holdout cases.
-- `sessions/rag_course_support.py` contains shared plumbing, not the decisions
+- `sessions/course-01-ai-fundamentals/rag_course_support.py` contains shared plumbing, not the decisions
   requested in the exercises.

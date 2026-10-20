@@ -15,7 +15,7 @@ Create a local `.env` file from `.env.example` and add your API key. Then run
 any Python file in `starter/`, for example:
 
 ```text
-uv run python sessions/01-llm-apis/starter/01_first_call.py
+uv run python sessions/course-01-ai-fundamentals/01-llm-apis/starter/01_first_call.py
 ```
 
 ## Structure

@@ -21,7 +21,7 @@ structured plan to choose one of three routes:
 - `clarify` when the reference is still ambiguous.
 
 ```bash
-uv run python sessions/06-conversational-ai/starter/01_conversational_rag.py
+uv run python sessions/course-01-ai-fundamentals/06-conversational-ai/starter/01_conversational_rag.py
 ```
 
 There is nothing to implement. Follow the two independent sessions and inspect
@@ -42,7 +42,7 @@ Implement:
   answer.
 
 ```bash
-uv run python sessions/06-conversational-ai/starter/02_tool_calling.py "When did Apollo 11 land?"
+uv run python sessions/course-01-ai-fundamentals/06-conversational-ai/starter/02_tool_calling.py "When did Apollo 11 land?"
 ```
 
 The exercise is complete when a valid date question performs two model calls,
@@ -63,7 +63,7 @@ execute every requested function call, append each result using the matching
 high-level list of tools used.
 
 ```bash
-uv run python sessions/06-conversational-ai/starter/03_basic_agent_loop.py
+uv run python sessions/course-01-ai-fundamentals/06-conversational-ai/starter/03_basic_agent_loop.py
 ```
 
 The exercise is complete when the model can choose the correct source, use a

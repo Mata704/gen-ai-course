@@ -18,6 +18,6 @@ Thumbs.db
 
 
 # directory for storing evaluation reports
-sessions/05-advanced-rag-evaluation/reports/
-sessions/05-advanced-rag-evaluation/reports-solution/
-sessions/04-rag-pipeline/chunks/
+sessions/course-01-ai-fundamentals/05-advanced-rag-evaluation/reports/
+sessions/course-01-ai-fundamentals/05-advanced-rag-evaluation/reports-solution/
+sessions/course-01-ai-fundamentals/04-rag-pipeline/chunks/

@@ -17,10 +17,9 @@ EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 DEFAULT_MIN_SCORE = float(os.getenv("MIN_SIMILARITY", "0.50"))
 SESSION_DIR = Path(__file__).resolve().parent.parent
 DOCUMENTS_DIR = (
-    Path(__file__).resolve().parents[3]
+    Path(__file__).resolve().parents[4]
     / "projects"
-    / "course-01-generative-ai"
-    / "knowledge-copilot"
+    / "course-01-ai-fundamentals"
     / "data"
     / "documents"
 )

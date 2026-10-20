@@ -16,10 +16,9 @@ if not os.getenv("OPENAI_API_KEY"):
 
 EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 DOCUMENTS_DIR = (
-    Path(__file__).resolve().parents[3]
+    Path(__file__).resolve().parents[4]
     / "projects"
-    / "course-01-generative-ai"
-    / "knowledge-copilot"
+    / "course-01-ai-fundamentals"
     / "data"
     / "documents"
 )

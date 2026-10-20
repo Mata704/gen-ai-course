@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 
-SESSIONS_DIR = Path(__file__).resolve().parents[3] / "sessions"
+SESSIONS_DIR = Path(__file__).resolve().parents[4] / "sessions" / "course-01-ai-fundamentals"
 SESSION_DIR = SESSIONS_DIR / "07-agent-api"
 sys.path.insert(0, str(SESSION_DIR))
 

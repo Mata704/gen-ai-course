@@ -17,13 +17,13 @@ requires `OPENAI_API_KEY` in `.env`.
   readable Markdown report are saved.
 
 ```bash
-uv run python sessions/05-advanced-rag-evaluation/starter/01_evaluate_rag_baseline.py --split development
+uv run python sessions/course-01-ai-fundamentals/05-advanced-rag-evaluation/starter/01_evaluate_rag_baseline.py --split development
 ```
 
 Use the holdout only after reaching a conclusion with the development cases:
 
 ```bash
-uv run python sessions/05-advanced-rag-evaluation/starter/01_evaluate_rag_baseline.py --split holdout
+uv run python sessions/course-01-ai-fundamentals/05-advanced-rag-evaluation/starter/01_evaluate_rag_baseline.py --split holdout
 ```
 
 ## 2. Compare retrieval methods
@@ -36,7 +36,7 @@ uv run python sessions/05-advanced-rag-evaluation/starter/01_evaluate_rag_baseli
   retrieval, so answers and cited sources are explicitly marked as `N/A`.
 
 ```bash
-uv run python sessions/05-advanced-rag-evaluation/starter/02_hybrid_retrieval.py --split development --top-k 2
+uv run python sessions/course-01-ai-fundamentals/05-advanced-rag-evaluation/starter/02_hybrid_retrieval.py --split development --top-k 2
 ```
 
 Answer:
@@ -47,7 +47,7 @@ Answer:
 After recording the decision, run the holdout once:
 
 ```bash
-uv run python sessions/05-advanced-rag-evaluation/starter/02_hybrid_retrieval.py --split holdout --top-k 2
+uv run python sessions/course-01-ai-fundamentals/05-advanced-rag-evaluation/starter/02_hybrid_retrieval.py --split holdout --top-k 2
 ```
 
 ## 3. Compare two RAG versions
@@ -59,7 +59,7 @@ uv run python sessions/05-advanced-rag-evaluation/starter/02_hybrid_retrieval.py
   versions, in the terminal and `reports/rag-comparison.md`.
 
 ```bash
-uv run python sessions/05-advanced-rag-evaluation/starter/03_compare_rag_versions.py
+uv run python sessions/course-01-ai-fundamentals/05-advanced-rag-evaluation/starter/03_compare_rag_versions.py
 ```
 
 Answer:
@@ -73,4 +73,4 @@ Answer:
 - Core: failure diagnosis, hybrid retrieval, task-specific metrics and version
   comparison.
 - Optional discussion: query rewriting and reranking in
-  `private/session-05/additional-topics-query-rewriting-reranking.md`.
+  `private/course-01-ai-fundamentals/session-05/additional-topics-query-rewriting-reranking.md`.

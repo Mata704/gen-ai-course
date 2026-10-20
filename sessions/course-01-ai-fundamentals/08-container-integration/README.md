@@ -12,26 +12,26 @@ uv sync
 ## Exercise 1
 
 ```powershell
-uv run python sessions/08-container-integration/starter/01_runtime_preflight.py
+uv run python sessions/course-01-ai-fundamentals/08-container-integration/starter/01_runtime_preflight.py
 ```
 
 ## Exercise 2
 
 ```powershell
-uv run python sessions/08-container-integration/starter/02_initialization_comparison.py
+uv run python sessions/course-01-ai-fundamentals/08-container-integration/starter/02_initialization_comparison.py
 ```
 
 Individual modes:
 
 ```powershell
-uv run python sessions/08-container-integration/starter/02_initialization_comparison.py --mode repeated
-uv run python sessions/08-container-integration/starter/02_initialization_comparison.py --mode reused
+uv run python sessions/course-01-ai-fundamentals/08-container-integration/starter/02_initialization_comparison.py --mode repeated
+uv run python sessions/course-01-ai-fundamentals/08-container-integration/starter/02_initialization_comparison.py --mode reused
 ```
 
 ## Start the application
 
 ```powershell
-docker compose -f sessions/08-container-integration/starter/compose.yaml up --build -d
+docker compose -f sessions/course-01-ai-fundamentals/08-container-integration/starter/compose.yaml up --build -d
 ```
 
 UI: `http://localhost:8501`. API: `http://localhost:8000`.
@@ -47,13 +47,13 @@ Invoke-RestMethod http://localhost:8000/health
 Alternative configuration:
 
 ```powershell
-docker compose -f sessions/08-container-integration/starter/compose.yaml -f sessions/08-container-integration/starter/compose.integration-error.yaml up --build -d
+docker compose -f sessions/course-01-ai-fundamentals/08-container-integration/starter/compose.yaml -f sessions/course-01-ai-fundamentals/08-container-integration/starter/compose.integration-error.yaml up --build -d
 ```
 
 Once the API and UI are running:
 
 ```powershell
-uv run python sessions/08-container-integration/starter/03_integration_check.py
+uv run python sessions/course-01-ai-fundamentals/08-container-integration/starter/03_integration_check.py
 ```
 
 ## Exercise 4
@@ -62,24 +62,24 @@ uv run python sessions/08-container-integration/starter/03_integration_check.py
 requires a session with existing messages.
 
 ```powershell
-uv run python sessions/08-container-integration/starter/04_restart_state.py before --session-id "SESSION_ID"
-uv run python sessions/08-container-integration/starter/04_restart_state.py after --session-id "SESSION_ID"
+uv run python sessions/course-01-ai-fundamentals/08-container-integration/starter/04_restart_state.py before --session-id "SESSION_ID"
+uv run python sessions/course-01-ai-fundamentals/08-container-integration/starter/04_restart_state.py after --session-id "SESSION_ID"
 ```
 
 ## Restart the API
 
 ```powershell
-docker compose -f sessions/08-container-integration/starter/compose.yaml restart api
+docker compose -f sessions/course-01-ai-fundamentals/08-container-integration/starter/compose.yaml restart api
 ```
 
 ## API logs
 
 ```powershell
-docker compose -f sessions/08-container-integration/starter/compose.yaml logs -f api
+docker compose -f sessions/course-01-ai-fundamentals/08-container-integration/starter/compose.yaml logs -f api
 ```
 
 ## Stop the application
 
 ```powershell
-docker compose -f sessions/08-container-integration/starter/compose.yaml stop
+docker compose -f sessions/course-01-ai-fundamentals/08-container-integration/starter/compose.yaml stop
 ```

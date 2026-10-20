@@ -21,8 +21,8 @@ class IntentResult(BaseModel):
 
 load_dotenv()
 CONTEXT_PATH = (
-    Path(__file__).parents[2]
-    / "sessions"
+    Path(__file__).parents[4]
+    / "sessions" / "course-01-ai-fundamentals"
     / "02-prompting-structured-outputs"
     / "context"
     / "course_rules.md"

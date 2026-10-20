@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 load_dotenv(REPO_ROOT / ".env")
 REQUIRED_FILES = [
     REPO_ROOT / "pyproject.toml",

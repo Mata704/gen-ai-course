@@ -19,12 +19,11 @@ import tiktoken
 from openai import OpenAI
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 PROJECT_ROOT = (
     REPO_ROOT
     / "projects"
-    / "course-01-generative-ai"
-    / "knowledge-copilot"
+    / "course-01-ai-fundamentals"
 )
 CORPUS_DIR = PROJECT_ROOT / "data" / "rag-corpus"
 PDF_CORPUS_DIR = PROJECT_ROOT / "data" / "rag-corpus-pdf"

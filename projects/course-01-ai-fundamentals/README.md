@@ -10,7 +10,7 @@ calling Python functions directly, and later through a FastAPI service.
 
 ```bash
 uv sync
-uv run streamlit run projects/course-01-generative-ai/knowledge-copilot/app.py
+uv run streamlit run projects/course-01-ai-fundamentals/app.py
 ```
 
 At this stage, the interface is intentionally not connected to an LLM or a
@@ -19,7 +19,7 @@ knowledge base yet.
 ## Structure
 
 ```text
-knowledge-copilot/
+course-01-ai-fundamentals/
 ├── app.py              # Supplied Streamlit interface
 ├── src/                # Application logic, added during the course
 ├── data/documents/     # Prepared passages for mini-project 1

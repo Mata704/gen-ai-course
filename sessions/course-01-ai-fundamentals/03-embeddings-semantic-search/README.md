@@ -13,12 +13,12 @@ Run all commands from the repository root after `uv sync` and creating a local
 the supplied Apollo corpus work before the challenges begin.
 
 ```bash
-uv run python sessions/03-embeddings-semantic-search/starter/01_embed_passages.py
+uv run python sessions/course-01-ai-fundamentals/03-embeddings-semantic-search/starter/01_embed_passages.py
 ```
 
 The script creates all document embeddings in one request and prints the model,
 number of passages, and vector dimensions. It also saves the vectors to
-`sessions/03-embeddings-semantic-search/generated/passage-embeddings.json`.
+`sessions/course-01-ai-fundamentals/03-embeddings-semantic-search/generated/passage-embeddings.json`.
 Open that JSON file in an editor to inspect the model, dimensions, source names,
 and numeric vectors. JSON is useful here because it preserves the vectors as
 arrays of numbers that Python and other tools can read; Markdown would only make
@@ -36,19 +36,19 @@ these functions:
 Run one question:
 
 ```bash
-uv run python sessions/03-embeddings-semantic-search/starter/02_semantic_search.py --query "Which mission first drove a vehicle on the Moon?"
+uv run python sessions/course-01-ai-fundamentals/03-embeddings-semantic-search/starter/02_semantic_search.py --query "Which mission first drove a vehicle on the Moon?"
 ```
 
 Run the labelled cases:
 
 ```bash
-uv run python sessions/03-embeddings-semantic-search/starter/02_semantic_search.py --evaluate
+uv run python sessions/course-01-ai-fundamentals/03-embeddings-semantic-search/starter/02_semantic_search.py --evaluate
 ```
 
 Try different decisions rather than accepting the first configuration:
 
 ```bash
-uv run python sessions/03-embeddings-semantic-search/starter/02_semantic_search.py --evaluate --top-k 1 --min-score 0.55
+uv run python sessions/course-01-ai-fundamentals/03-embeddings-semantic-search/starter/02_semantic_search.py --evaluate --top-k 1 --min-score 0.55
 ```
 
 The exercise is complete when:
@@ -79,13 +79,13 @@ persistent Chroma collection, and a small CLI. Complete these functions:
 Run an unfiltered search:
 
 ```bash
-uv run python sessions/03-embeddings-semantic-search/starter/03_chroma_filtered_search.py --query "Which mission used a vehicle on the Moon?"
+uv run python sessions/course-01-ai-fundamentals/03-embeddings-semantic-search/starter/03_chroma_filtered_search.py --query "Which mission used a vehicle on the Moon?"
 ```
 
 Combine semantic meaning with deterministic constraints:
 
 ```bash
-uv run python sessions/03-embeddings-semantic-search/starter/03_chroma_filtered_search.py --query "Which mission used a vehicle on the Moon?" --mission-type lunar_landing --min-year 1970
+uv run python sessions/course-01-ai-fundamentals/03-embeddings-semantic-search/starter/03_chroma_filtered_search.py --query "Which mission used a vehicle on the Moon?" --mission-type lunar_landing --min-year 1970
 ```
 
 The exercise is complete when:

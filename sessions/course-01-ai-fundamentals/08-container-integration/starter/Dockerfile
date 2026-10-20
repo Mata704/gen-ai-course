@@ -7,4 +7,4 @@ COPY sessions ./sessions
 COPY projects ./projects
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8000
-CMD ["uvicorn", "--app-dir", "sessions/08-container-integration/starter/app", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "--app-dir", "sessions/course-01-ai-fundamentals/08-container-integration/starter/app", "api:app", "--host", "0.0.0.0", "--port", "8000"]

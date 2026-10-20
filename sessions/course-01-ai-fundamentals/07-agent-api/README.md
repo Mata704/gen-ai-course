@@ -19,7 +19,7 @@ Run the complete `01_robust_agent.py`; there is nothing to implement.
   not inject those errors.
 
 ```bash
-uv run python sessions/07-agent-api/starter/01_robust_agent.py
+uv run python sessions/course-01-ai-fundamentals/07-agent-api/starter/01_robust_agent.py
 ```
 
 ## 2. Expose the agent through FastAPI
@@ -37,7 +37,7 @@ Complete the handlers in `02_fastapi_service.py`:
 Start the development server:
 
 ```bash
-uv run uvicorn --app-dir sessions/07-agent-api/starter 02_fastapi_service:app --reload
+uv run uvicorn --app-dir sessions/course-01-ai-fundamentals/07-agent-api/starter 02_fastapi_service:app --reload
 ```
 
 **Verify in `/docs`:** a valid chat returns answer, tools used and trace; search
@@ -61,7 +61,7 @@ visible instead of displaying them as successful answers.
 With the completed API running:
 
 ```bash
-uv run python sessions/07-agent-api/starter/03_http_client.py
+uv run python sessions/course-01-ai-fundamentals/07-agent-api/starter/03_http_client.py
 ```
 
 **Verify:** the second question still refers to Apollo 13, both requests use

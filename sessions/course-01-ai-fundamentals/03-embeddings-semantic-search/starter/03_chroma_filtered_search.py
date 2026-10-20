@@ -16,13 +16,12 @@ load_dotenv()
 
 EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 MIN_SIMILARITY = float(os.getenv("MIN_SIMILARITY", "0.50"))
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 SESSION_DIR = Path(__file__).resolve().parent.parent
 DOCUMENTS_DIR = (
     PROJECT_ROOT
     / "projects"
-    / "course-01-generative-ai"
-    / "knowledge-copilot"
+    / "course-01-ai-fundamentals"
     / "data"
     / "documents"
 )
