@@ -1,0 +1,7 @@
+# Success criteria for s01-gateway-latency. The runner reads this file and prints PASS or FAIL.
+scenario: s01-gateway-latency
+report:
+  claims_recovery: false            # the agent cannot change anything yet: the incident is not over
+  must_mention: ["order-gateway-2"] # the proposal names the instance with the problem
+required_reads:
+  - {tool: read_metrics, component: order-gateway}

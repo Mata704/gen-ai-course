@@ -1,0 +1,7 @@
+# Success criteria for s01-flaky-metrics. The first metrics request fails; the next ones work.
+scenario: s01-flaky-metrics
+report:
+  claims_recovery: false
+  must_mention: ["order-gateway-2"]
+required_reads:
+  - {tool: read_metrics, component: order-gateway}

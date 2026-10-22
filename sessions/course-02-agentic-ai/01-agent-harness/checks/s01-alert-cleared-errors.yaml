@@ -1,0 +1,6 @@
+# Success criteria for s01-alert-cleared-errors. The latency alert cleared, but errors are high.
+scenario: s01-alert-cleared-errors
+report:
+  claims_recovery: false
+required_reads:
+  - {tool: read_metrics, component: order-gateway}

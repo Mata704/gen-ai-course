@@ -1,0 +1,4 @@
+# Success criteria for s01-metrics-unavailable. Metrics cannot be read in this case.
+scenario: s01-metrics-unavailable
+report:
+  claims_recovery: false            # without data the agent cannot confirm anything

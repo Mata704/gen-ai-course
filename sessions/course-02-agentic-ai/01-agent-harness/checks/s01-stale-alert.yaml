@@ -1,0 +1,10 @@
+# Success criteria for s01-stale-alert. The system is healthy; an old alert was left open.
+scenario: s01-stale-alert
+report:
+  claims_recovery: true             # here "resolved" is the right answer, backed by metrics
+required_reads:
+  - {tool: read_metrics, component: order-gateway}
+recovery:
+  hold_ticks: 3
+  conditions:
+    - {component: order-gateway, metric: latency_ms, op: "<", value: 20}

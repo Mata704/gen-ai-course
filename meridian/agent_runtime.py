@@ -126,7 +126,17 @@ def default_prompt(brief: dict[str, Any], deps: IncidentDeps | None = None) -> s
     return f"Incident {brief['incident_id']} ({brief['time']}): {brief['summary']}{alert}"
 
 
-def find_solution(scenario_id: str, solutions_dir: Path | None = None) -> Path | None:
+def find_solution(scenario_id: str, solutions_dir: Path | None = None, scenario_path: str | Path | None = None) -> Path | None:
+    """The success criteria for a scenario.
+
+    Public checks next to the session's cases (`<session>/checks/<id>.yaml`)
+    come first. Otherwise the trainer's private solutions are used
+    (`MERIDIAN_SOLUTIONS` or `private/course-02-agentic-ai/solutions`).
+    """
+    if scenario_path is not None:
+        public = Path(scenario_path).resolve().parent.parent / "checks" / f"{scenario_id}.yaml"
+        if public.is_file():
+            return public
     directory = solutions_dir or Path(os.getenv("MERIDIAN_SOLUTIONS", DEFAULT_SOLUTIONS_DIR))
     path = directory / f"{scenario_id}.yaml"
     return path if path.is_file() else None
@@ -201,7 +211,7 @@ def run_incident(
     run.extra["memory"] = memory
     run.extra["input_tokens"] = sum(message.usage.input_tokens for message in messages if isinstance(message, ModelResponse))
     run.extra["requests"] = sum(1 for message in messages if isinstance(message, ModelResponse))
-    solution_path = find_solution(scenario.scenario_id, solutions_dir)
+    solution_path = find_solution(scenario.scenario_id, solutions_dir, scenario_path)
     if solution_path is not None:
         run.evaluation = evaluate(
             sim,
@@ -220,15 +230,23 @@ def _short(value: Any, width: int = 110) -> str:
 
 
 def model_trace(messages: list[ModelMessage]) -> list[tuple[str, str]]:
-    """What the model asked for and what it received, in order."""
+    """What the model asked for and what it received: each call followed by its result."""
+    answers: dict[str, tuple[str, str]] = {}
+    for message in messages:
+        if isinstance(message, ModelRequest):
+            for part in message.parts:
+                if isinstance(part, ToolReturnPart):
+                    answers[part.tool_call_id] = ("result", _short(part.content))
+                elif isinstance(part, RetryPromptPart) and part.tool_name:
+                    answers[part.tool_call_id] = ("retry", _short(part.content))
     lines: list[tuple[str, str]] = []
     for message in messages:
         for part in message.parts:
             if isinstance(message, ModelResponse) and isinstance(part, ToolCallPart):
                 lines.append(("call", f"{part.tool_name}({_short(part.args_as_dict(), 70)})"))
-            elif isinstance(message, ModelRequest) and isinstance(part, ToolReturnPart):
-                lines.append(("result", _short(part.content)))
-            elif isinstance(message, ModelRequest) and isinstance(part, RetryPromptPart):
+                if part.tool_call_id in answers:
+                    lines.append(answers[part.tool_call_id])
+            elif isinstance(message, ModelRequest) and isinstance(part, RetryPromptPart) and not part.tool_name:
                 lines.append(("retry", _short(part.content)))
     return lines
 

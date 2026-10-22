@@ -1,7 +1,9 @@
 """Session 1 starter: the first-line incident agent for the Meridian Exchange.
 
-This harness runs as supplied. Use it with `python -m meridian.run` (see the
-session README) and read the trace before changing anything.
+The agent can read the alert of an incident, and nothing else. It runs as
+supplied. In this session you give it the tools it needs to investigate
+(exercise 1) and a check that stops it from reporting "resolved" without proof
+(exercise 2).
 """
 
 from __future__ import annotations
@@ -15,42 +17,31 @@ from meridian.agent_runtime import IncidentDeps
 
 INSTRUCTIONS = """\
 You are the first-line incident agent for the Meridian Exchange.
-Handle the incident quickly and report the result.
+You cannot change any system yet. Investigate the incident and propose a mitigation.
+Report "resolved" only if the incident is over.
 """
 
 
 class IncidentReport(BaseModel):
     incident_id: str
-    status: Literal["resolved", "unresolved"]
-    summary: str
+    status: Literal["resolved", "unresolved", "insufficient_information"]
+    diagnosis: str
+    proposed_mitigation: str | None = None
+    evidence: list[str]
+
+
+# Tools -------------------------------------------------------------------
+# A tool is a Python function. The model sees its name, its arguments and its
+# docstring, and receives what it returns. `ctx.deps.tools` gives access to
+# the simulator (see meridian/tools.py for what it offers).
 
 
 def read_alert(ctx: RunContext[IncidentDeps], alert_id: str) -> dict[str, Any]:
-    """Check an alert."""
-    alert = ctx.deps.tools.read_alert(alert_id)
-    if "error" in alert:
-        return alert
-    return {
-        "alert_id": alert["alert_id"],
-        "rule": alert["rule"],
-        "component": alert["component"],
-        "status": "OK" if alert["notification"] == "delivered" else "FAILED",
-    }
-
-
-def read_metrics(ctx: RunContext[IncidentDeps], component: str, window_ticks: int = 5) -> dict[str, Any]:
-    """Read recent metrics for a component."""
-    return ctx.deps.tools.read_metrics(component, window_ticks)
-
-
-def read_runbook(ctx: RunContext[IncidentDeps], name: str) -> dict[str, Any]:
-    """Read a runbook."""
-    return ctx.deps.tools.read_runbook(name)
+    """Read an alert: rule, component, instance, state (open or resolved) and when it was opened."""
+    return ctx.deps.tools.read_alert(alert_id)
 
 
 def build_agent(model: Any) -> Agent[IncidentDeps, IncidentReport]:
     agent = Agent(model, deps_type=IncidentDeps, output_type=IncidentReport, instructions=INSTRUCTIONS)
     agent.tool(read_alert)
-    agent.tool(read_metrics)
-    agent.tool(read_runbook)
     return agent

@@ -1,0 +1,7 @@
+# Success criteria for s01-market-data-delay.
+scenario: s01-market-data-delay
+report:
+  claims_recovery: false
+required_reads:
+  - {tool: read_metrics, component: market-data}
+  - {tool: read_runbook, name: market-data-delays}  # the agent found and read the runbook for this component
