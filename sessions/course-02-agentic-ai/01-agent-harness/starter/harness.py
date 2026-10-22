@@ -2,7 +2,7 @@
 
 The agent can read the alert of an incident, and nothing else. It runs as
 supplied. In this session you give it the tools it needs to investigate
-(exercise 1) and a check that stops it from reporting "resolved" without proof
+(exercise 1), then a way to fix the problem and a check that it worked
 (exercise 2).
 """
 
@@ -17,7 +17,7 @@ from meridian.agent_runtime import IncidentDeps
 
 INSTRUCTIONS = """\
 You are the first-line incident agent for the Meridian Exchange.
-You cannot change any system yet. Investigate the incident and propose a mitigation.
+Investigate the incident and propose a mitigation.
 Report "resolved" only if the incident is over.
 """
 

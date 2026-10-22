@@ -9,7 +9,7 @@ format of the answer and the checks around it. In this session you keep the
 model and build the harness:
 
 - **Exercise 1:** give the agent the tools it needs to investigate.
-- **Exercise 2:** make sure the agent can only say "resolved" with proof.
+- **Exercise 2:** let the agent fix the problem, and check in code that the fix worked before it can say "resolved".
 
 Run every command from the repository root, after `uv sync` and after setting
 `OPENAI_API_KEY` in a local `.env` file. Commands are written on one line so
@@ -36,14 +36,14 @@ that they work in any terminal (PowerShell included).
 
 The incidents:
 
-| Case | What happens |
-|---|---|
-| `s01-gateway-latency` | The order gateway is slow. |
-| `s01-market-data-delay` | Market data arrives late. |
-| `s01-metrics-unavailable` | The gateway is slow and the metrics service is down. |
-| `s01-flaky-metrics` | The gateway is slow and the first metrics request fails. |
-| `s01-stale-alert` | Everything is fine, but an old alert was left open. |
-| `s01-alert-cleared-errors` | The latency alert closed by itself. Is the incident over? |
+| Case | What happens | Exercise |
+|---|---|---|
+| `s01-market-data-delay` | Market data arrives late. | 1 |
+| `s01-metrics-unavailable` | The gateway is slow and the metrics service is down. | 1 |
+| `s01-flaky-metrics` | The gateway is slow and the first metrics request fails. | 1 |
+| `s01-gateway-latency` | The order gateway is slow. | 2 |
+| `s01-stale-alert` | Everything is fine, but an old alert was left open. | 2 |
+| `s01-alert-cleared-errors` | The latency alert closed by itself. Is the incident over? | 2 |
 
 ## The commands
 
@@ -91,35 +91,47 @@ drawing a conclusion.
    what the model reads) and what it returns.
 5. Run `harness_v2.py` on every incident.
 
-**Done when** these pass: `s01-gateway-latency`, `s01-market-data-delay`,
-`s01-metrics-unavailable` and `s01-flaky-metrics`.
+**Done when** the three exercise 1 cases pass: `s01-market-data-delay`,
+`s01-metrics-unavailable` and `s01-flaky-metrics`. The agent should also name
+the instance with the problem in `s01-gateway-latency`, but that case only
+passes after exercise 2.
 
 **Write down:** which tools you added, why each one, and one decision about a
 tool interface that changed what the agent did.
 
-## Exercise 2 — "Resolved" only with proof
+## Exercise 2 — Fix the problem, and check that it worked
 
-The format of the answer is checked by PydanticAI, but nothing checks that the
-answer is true. An `IncidentReport` with `status: "resolved"` is valid even if
-the gateway is still failing.
+So far the agent can only propose. Now it gets one action, and a check in
+code that stops it from saying "resolved" unless the metrics confirm it.
 
-1. Look at `s01-alert-cleared-errors` with your exercise 1 version. Did the
-   agent say "resolved"? What do the metrics say?
-2. Add a check in code: when the report says `resolved`, the harness reads
-   the metrics itself and rejects the report if they do not confirm recovery.
-   Use the recovery criterion of the runbook (latency below 20 ms and error
-   rate below 1 % in the last 3 readings).
+1. Add a tool that restarts one instance. The simulator offers
+   `ctx.deps.tools.restart_instance(instance_id)`. An instance is back after
+   about 2 minutes. Restart only instances of non-critical components;
+   repeated and unsafe actions are Session 2.
+2. Run `s01-gateway-latency`. The agent should find `order-gateway-2`,
+   restart it, and report "resolved".
+3. Now add the check. The format of the answer is checked by PydanticAI, but
+   nothing checks that the answer is true. Write a function that, when the
+   report says `resolved`, reads the metrics itself and rejects the report if
+   they do not confirm recovery. Use the recovery criterion of the runbook:
+   latency below 20 ms and error rate below 1 % in the last 3 readings.
 
    PydanticAI runs this kind of check with an output validator: a function
    registered with `agent.output_validator(...)` that receives the report and
-   raises `ModelRetry("...")` to send it back to the model with a reason.
-3. Run every incident again.
+   either returns it (accepted) or raises `ModelRetry("reason")` (rejected:
+   the report goes back to the model with the reason, and the model must
+   answer again). Give the agent a few attempts: `Agent(..., retries=3)`.
+4. Run every incident again. Look at:
+   - `s01-alert-cleared-errors`: the latency alert closed, but errors are at
+     6 %. A restart does not fix it. The check must stop "resolved".
+   - `s01-stale-alert`: nothing is broken. The right answer is "resolved",
+     without restarting anything.
 
-**Done when** all six incidents pass, including `s01-stale-alert`, where
-"resolved" is the right answer.
+**Done when** all six incidents pass.
 
-**Write down:** why a check in code is different from asking the model, in
-the instructions, to "only report resolved with proof".
+**Write down:** why doing an action is not the same as fixing the problem,
+and why a check in code is different from asking the model, in the
+instructions, to "only report resolved with proof".
 
 ## Deliverable
 
@@ -137,7 +149,8 @@ the instructions, to "only report resolved with proof".
 
 ## Scope boundary
 
-One agent, read-only tools, a typed answer and a check on the answer. Actions
-that change systems and choosing what goes into the context belong to
-Session 2. MCP, memory, security policies and multi-agent coordination come
+One agent, a few tools, one simple action (restarting one instance of a
+non-critical component), a typed answer and a check on the answer. Repeated
+or unsafe actions, idempotency and choosing what goes into the context belong
+to Session 2. MCP, memory, security policies and multi-agent coordination come
 later in the course.
