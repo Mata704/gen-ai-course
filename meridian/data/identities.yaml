@@ -1,0 +1,20 @@
+# Test identities. A run acts as one of these roles (scenario `actor`, or
+# `--role` on the command line). What each role may do is not defined here:
+# that policy is part of the harness (Session 5).
+roles:
+  first-line:
+    name: agent-first-line
+    team: trading-ops
+    description: First-line incident agent. Investigates, mitigates simple problems, escalates.
+  on-call:
+    name: rita.alves
+    team: trading-ops
+    description: On-call engineer. Can change production systems; accountable for mitigations outside trading hours.
+  incident-manager:
+    name: joao.matos
+    team: trading-ops
+    description: Incident manager. Approves risky changes during the trading session and owns communication with members.
+  settlement-analyst:
+    name: ana.costa
+    team: settlement-ops
+    description: Settlement operations analyst. Another team; used to check that memories are not shared across teams.

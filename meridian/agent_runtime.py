@@ -1,8 +1,14 @@
 """Run a PydanticAI agent on a Meridian scenario and show what happened.
 
 A harness is a Python file that defines `build_agent(model) -> Agent`. It may
-also define `build_prompt(brief, deps) -> str` to control the first message
-(`deps` gives access to the tools and the simulator).
+also define:
+
+- `build_prompt(brief, deps) -> str`: the first message (`deps` gives access
+  to the tools, the simulator, the memory store and the identity);
+- `build_toolsets(deps) -> list`: toolsets created for this run, e.g. the
+  simulated MCP servers, which must share this run's simulator (Session 3);
+- `after_run(report, deps)`: called once the agent has finished, e.g. to
+  write a shift handover note to memory (Session 4).
 Sessions keep their harness files next to their exercises; this module only
 provides the plumbing to load a harness, run it and print the trace.
 """
@@ -13,6 +19,7 @@ import importlib.util
 import json
 import os
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -21,10 +28,14 @@ from typing import Any, Callable
 from dotenv import load_dotenv
 from pydantic_ai import capture_run_messages
 from pydantic_ai.exceptions import AgentRunError, UsageLimitExceeded
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, RetryPromptPart, ToolCallPart, ToolReturnPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, RetryPromptPart, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.usage import UsageLimits
 
 from meridian.evaluate import EvaluationResult, evaluate, print_evaluation, report_as_dict
+import yaml
+
+from meridian.memory import MemoryStore
+from meridian.model import DATA_DIR
 from meridian.scenarios import load_solution, load_scenario
 from meridian.simulator import Simulator
 from meridian.tools import MeridianTools, ToolCall
@@ -35,15 +46,40 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOLUTIONS_DIR = REPO_ROOT / "private" / "course-02-agentic-ai" / "solutions"
 
 
+IDENTITIES_FILE = DATA_DIR / "identities.yaml"
+
+
+def load_identities() -> dict[str, dict[str, Any]]:
+    return yaml.safe_load(IDENTITIES_FILE.read_text(encoding="utf-8"))["roles"]
+
+
+def identity_for(role: str) -> dict[str, Any]:
+    roles = load_identities()
+    if role not in roles:
+        raise SystemExit(f"Unknown role {role!r}; use one of {', '.join(roles)}")
+    return {"role": role, **roles[role]}
+
+
 @dataclass
 class IncidentDeps:
-    """Dependencies available to tools through `RunContext.deps`."""
+    """Dependencies available to tools through `RunContext.deps`.
+
+    - `tools`: the simulator tools (and through them `sim`);
+    - `memory`: the persistent memory store, or None when memory is disabled;
+    - `identity`: who the agent acts as: role, name and team.
+    """
 
     tools: MeridianTools
+    memory: MemoryStore | None = None
+    identity: dict[str, Any] = field(default_factory=lambda: identity_for("first-line"))
 
     @property
     def sim(self) -> Simulator:
         return self.tools.sim
+
+    @property
+    def role(self) -> str:
+        return self.identity["role"]
 
 
 @dataclass
@@ -96,6 +132,28 @@ def find_solution(scenario_id: str, solutions_dir: Path | None = None) -> Path |
     return path if path.is_file() else None
 
 
+def open_memory(scenario_memory: list[dict[str, Any]], memory_path: str | Path | None) -> MemoryStore:
+    """A persistent store when a path is given, otherwise a fresh store for this run only."""
+    if memory_path is None:
+        memory_path = Path(tempfile.mkdtemp(prefix="meridian-memory-")) / "memory.db"
+    store = MemoryStore(memory_path)
+    store.seed(scenario_memory)
+    return store
+
+
+def model_input_text(messages: list[ModelMessage]) -> str:
+    """Everything the model received: prompts and tool results."""
+    chunks = []
+    for message in messages:
+        if isinstance(message, ModelRequest):
+            if message.instructions:
+                chunks.append(message.instructions)
+            for part in message.parts:
+                if isinstance(part, (UserPromptPart, ToolReturnPart, RetryPromptPart)):
+                    chunks.append(part.content if isinstance(part.content, str) else json.dumps(part.content, default=str))
+    return "\n".join(chunks)
+
+
 def run_incident(
     harness: ModuleType,
     scenario_path: str | Path,
@@ -103,31 +161,56 @@ def run_incident(
     model: Any = None,
     max_requests: int = 20,
     solutions_dir: Path | None = None,
+    memory_path: str | Path | None = None,
+    use_memory: bool = True,
+    role: str | None = None,
 ) -> IncidentRun:
     """Run one harness on one scenario. Evaluate it when a solution file exists."""
     scenario = load_scenario(scenario_path)
     sim = Simulator(scenario)
-    tools = MeridianTools(sim)
+    identity = identity_for(role or scenario.actor.get("role", "first-line"))
+    tools = MeridianTools(sim, actor=identity["name"])
+    memory = open_memory(scenario.memory_seed, memory_path) if use_memory else None
+    deps = IncidentDeps(tools, memory, identity)
     agent = harness.build_agent(model or default_model())
     brief = sim.incident_brief()
     build_prompt: Callable[[dict[str, Any], IncidentDeps], str] = getattr(harness, "build_prompt", default_prompt)
-    deps = IncidentDeps(tools)
+    toolsets = harness.build_toolsets(deps) if hasattr(harness, "build_toolsets") else None
 
     report, error = None, None
     with capture_run_messages() as messages:
         try:
-            result = agent.run_sync(build_prompt(brief, deps), deps=deps, usage_limits=UsageLimits(request_limit=max_requests))
+            result = agent.run_sync(
+                build_prompt(brief, deps),
+                deps=deps,
+                usage_limits=UsageLimits(request_limit=max_requests),
+                toolsets=toolsets,
+            )
             report = result.output
         except UsageLimitExceeded as exceeded:
             error = f"stopped: {exceeded}"
         except AgentRunError as failure:
             error = f"agent error: {failure}"
 
+    if report is not None and hasattr(harness, "after_run"):
+        harness.after_run(report, deps)
+
     run = IncidentRun(scenario.scenario_id, Path(harness.__file__).name, brief, report, tools.trace, sim, error, list(messages))
     run.extra["end_tick"] = sim.state.tick
+    run.extra["identity"] = identity
+    run.extra["memory"] = memory
+    run.extra["input_tokens"] = sum(message.usage.input_tokens for message in messages if isinstance(message, ModelResponse))
+    run.extra["requests"] = sum(1 for message in messages if isinstance(message, ModelResponse))
     solution_path = find_solution(scenario.scenario_id, solutions_dir)
     if solution_path is not None:
-        run.evaluation = evaluate(sim, tools.trace, report, load_solution(solution_path))
+        run.evaluation = evaluate(
+            sim,
+            tools.trace,
+            report,
+            load_solution(solution_path),
+            memory=memory,
+            model_input=model_input_text(list(messages)),
+        )
     return run
 
 
@@ -170,10 +253,24 @@ def print_run(run: IncidentRun, show_trace: bool = True) -> None:
     else:
         print("Report:")
         print(json.dumps(report_as_dict(run.report), indent=2, default=str))
+    identity = run.extra.get("identity")
+    if identity:
+        print(f"Acting as: {identity['name']} ({identity['role']})")
+    print(f"Model requests: {run.extra.get('requests', 0)}, input tokens: {run.extra.get('input_tokens', 0)}")
+    for approval in run.sim.approvals:
+        print(f"Approval {approval['approval_ref']} {approval['time']} {approval['action']} {approval['target']} by {approval['approver_role']} -> {approval['status']}")
+    for message in run.sim.outbox:
+        print(f"Message {message['message_id']} {message['time']} to {message['channel']}: {_short(message['text'], 90)}")
+    for ticket in run.sim.tickets.tickets:
+        if ticket.created_by_agent:
+            print(f"Ticket created: {ticket.key} [{ticket.issue_type}] {ticket.summary}")
+        elif ticket.updated_by_agent:
+            print(f"Ticket updated: {ticket.key} (status {ticket.status}, {len(ticket.comments)} comment(s), links {ticket.links})")
     actions = [record for record in run.sim.executor.audit]
     if actions:
         print("Actions recorded by the executor:")
         for record in actions:
-            print(f"  {record.action_id} {record.time} {record.action} {record.target} -> {record.outcome}")
+            approval = f" [{record.confirmation_ref}]" if record.confirmation_ref else ""
+            print(f"  {record.action_id} {record.time} {record.action} {record.target}{approval} by {record.actor} -> {record.outcome}")
     if run.evaluation is not None:
         print_evaluation(run.evaluation)

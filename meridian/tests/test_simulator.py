@@ -12,7 +12,9 @@ from meridian.evaluate import evaluate
 REPO = Path(__file__).resolve().parents[2]
 S1 = REPO / "sessions" / "course-02-agentic-ai" / "01-agent-harness" / "cases"
 S2 = REPO / "sessions" / "course-02-agentic-ai" / "02-context-tools-skills" / "cases"
-ALL_CASES = sorted(S1.glob("*.yaml")) + sorted(S2.glob("*.yaml"))
+S3 = REPO / "sessions" / "course-02-agentic-ai" / "03-mcp-integration" / "cases"
+S5 = REPO / "sessions" / "course-02-agentic-ai" / "05-security" / "cases"
+ALL_CASES = sorted((REPO / "sessions" / "course-02-agentic-ai").glob("*/cases/*.yaml"))
 
 
 @pytest.mark.parametrize("path", ALL_CASES, ids=lambda path: path.stem)
@@ -108,3 +110,75 @@ def test_evaluation_checks_claims_reads_and_effects() -> None:
     result = evaluate(sim, tools.trace, {"status": "resolved"}, key)
     assert not result.passed
     assert [check.passed for check in result.checks] == [False, False, True]
+
+
+def test_an_approval_is_valid_for_one_action_and_target_only() -> None:
+    sim = Simulator(S5 / "s05-freeze-trading.yaml")
+    tools = MeridianTools(sim, actor="rita.alves")
+    approval = tools.request_approval("rollback_change", "CHG-4471", "errors", "incident-manager")
+    assert approval["status"] == "approved"
+    assert tools.restart_service("reference-db", confirmation_ref=approval["approval_ref"])["status"] == "rejected"
+    assert tools.rollback_change("CHG-4471", confirmation_ref=approval["approval_ref"])["status"] == "completed"
+    assert sim.executor.audit[-1].actor == "rita.alves"
+
+
+def test_messages_are_recorded_in_the_outbox() -> None:
+    sim = Simulator(S5 / "s05-legit-first-line-restart.yaml")
+    MeridianTools(sim).send_message("members-status", "Delays mitigated.")
+    assert sim.outbox[0]["channel"] == "members-status"
+
+
+def test_memory_store_corrections_deletion_and_teams(tmp_path: Path) -> None:
+    from meridian.memory import MemoryStore
+
+    store = MemoryStore(tmp_path / "memory.db")
+    common = {"kind": "note", "subject": "order-gateway", "source_type": "user", "source_ref": "x", "author": "x", "created_at": "2026-11-04 10:00"}
+    old = store.add(content="restart the whole service", team="trading-ops", **common)
+    new = store.add(content="restart one instance only", team="trading-ops", supersedes=old.memory_id, **common)
+    other = store.add(content="settlement contact", team="settlement-ops", **common)
+    assert [record.memory_id for record in store.search(team="trading-ops")] == [new.memory_id]
+    assert store.get(old.memory_id).status == "superseded"
+    assert store.delete(other.memory_id, deleted_at="2026-11-04 11:00", deleted_by="x", reason="asked")
+    with pytest.raises(KeyError):
+        store.get(other.memory_id)
+    assert store.deletions()[0]["memory_id"] == other.memory_id
+
+
+def test_mcp_servers_share_the_simulator_and_check_scopes() -> None:
+    import asyncio
+
+    from fastmcp import Client
+
+    from meridian.mcp_servers import build_servers
+
+    sim = Simulator(S3 / "s03-scope-refused.yaml")
+    tools = MeridianTools(sim)
+    servers = build_servers(tools)
+
+    async def scenario() -> tuple[str, str]:
+        async with Client(servers["tickets"]) as tickets, Client(servers["deployments"]) as deployments:
+            refused = await tickets.call_tool("add_comment", {"key": "MRX-2240", "body": "x"})
+            restart = await deployments.call_tool("restart_workload", {"service": "order-gateway", "instance": "order-gateway-1"})
+            return refused.content[0].text, restart.content[0].text
+
+    refused, restart = asyncio.run(scenario())
+    assert "insufficient_scope" in refused
+    assert '"completed"' in restart
+    assert [call.tool for call in tools.trace] == ["tickets.add_comment", "deployments.restart_workload"]
+    assert len(sim.executor.effects("restart_instance", "order-gateway-1")) == 1
+
+
+def test_description_overrides_come_from_the_scenario() -> None:
+    import asyncio
+
+    from fastmcp import Client
+
+    from meridian.mcp_servers import build_servers
+
+    servers = build_servers(MeridianTools(Simulator(S3 / "s03-description-change.yaml")), ["monitoring"])
+
+    async def descriptions() -> dict[str, str]:
+        async with Client(servers["monitoring"]) as client:
+            return {tool.name: tool.description for tool in await client.list_tools()}
+
+    assert "rollback_deployment" in asyncio.run(descriptions())["get_device_datapoints"]

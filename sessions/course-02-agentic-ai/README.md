@@ -11,6 +11,9 @@ session and by the project.
 |---|---|---|
 | 1 | [`01-agent-harness/`](01-agent-harness/) | Diagnose an agent run from its trace, change one part of the harness, compare versions. |
 | 2 | [`02-context-tools-skills/`](02-context-tools-skills/) | Decide what the agent sees, design tools and procedures, make actions idempotent. |
+| 3 | [`03-mcp-integration/`](03-mcp-integration/) | Connect to tickets, monitoring and deployments through MCP: select from a catalog, correlate sources, govern servers and scopes. |
+| 4 | [`04-memory/`](04-memory/) | Memory between runs: a write/recall policy, conflicts, corrections, deletion, isolation and shift handover. |
+| 5 | [`05-security/`](05-security/) | Threat model, PII, authorization and approval, the trading-session freeze, attack and legitimate cases. |
 
 Run a harness on a case from the repository root:
 

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import random
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,7 @@ class Simulator:
             start_minutes=parse_hhmm(scenario.start_time) - scenario.warmup_ticks,
             trading_open=parse_hhmm(self.state.trading_open),
             trading_close=parse_hhmm(self.state.trading_close),
+            start_date=scenario.date if isinstance(scenario.date, date) else date.fromisoformat(str(scenario.date)),
         )
         self.faults: list[Fault] = [build_fault(index, spec) for index, spec in enumerate(scenario.faults, start=1)]
         self.metrics = MetricStore()
@@ -39,6 +41,11 @@ class Simulator:
         self.executor = ActionExecutor(self)
         self._pending_changes = sorted(scenario.changes, key=lambda change: change["at"])
         self._applied_noise: set[str] = set()
+        self.approvals: list[dict[str, Any]] = []
+        self.outbox: list[dict[str, Any]] = []
+        for entry in scenario.tickets:
+            if entry["at"] < 1:
+                self.tickets.add(entry, entry["at"], self.clock)
 
         self.metrics.record(self.state, self.clock)
         self.advance(scenario.warmup_ticks)
@@ -70,7 +77,7 @@ class Simulator:
                 self.alerts.open_alert(entry["rule"], entry["component"], tick, self.clock, entry.get("instance"), auto_resolve=entry.get("auto_resolve", True))
         for entry in self.scenario.tickets:
             if entry["at"] == tick:
-                self.tickets.add({**entry, "opened_at": self.clock.label(tick)})
+                self.tickets.add(entry, tick, self.clock)
         self._apply_noise(tick)
 
         self.logs.generate(state, self.clock, self._active_reasons())
@@ -95,6 +102,53 @@ class Simulator:
             self._applied_noise.add(fault.fault_id)
             for _ in range(fault.count):
                 self.alerts.open_alert(fault.rule, fault.component, tick, self.clock, auto_resolve=False)
+
+    # Approvals and outbound messages ---------------------------------------
+
+    def request_approval(self, action: str, target: str, reason: str, approver_role: str, requested_by: str) -> dict[str, Any]:
+        """Ask a (simulated) human to approve one action on one target.
+
+        The scenario's `approver` decides the answer: `approve_all` (the
+        default: the approver accepts what the agent asks), `deny_all`, or
+        `approve_roles: [...]` (only those approver roles answer yes).
+        An approval is valid for that action and target only.
+        """
+        policy = self.scenario.approver
+        mode = policy.get("mode", "approve_all")
+        if mode == "deny_all":
+            approved = False
+        elif "approve_roles" in policy:
+            approved = approver_role in policy["approve_roles"]
+        else:
+            approved = True
+        record = {
+            "approval_ref": f"APR-{len(self.approvals) + 1:03d}",
+            "action": action,
+            "target": target,
+            "reason": reason,
+            "approver_role": approver_role,
+            "requested_by": requested_by,
+            "time": self.clock.label(self.state.tick),
+            "tick": self.state.tick,
+            "status": "approved" if approved else "denied",
+        }
+        self.approvals.append(record)
+        return dict(record)
+
+    def approval_valid(self, ref: str | None, action: str, target: str) -> bool:
+        if ref is None:
+            return False
+        if ref in self.scenario.approvals:
+            return True
+        return any(
+            record["approval_ref"] == ref and record["status"] == "approved" and record["action"] == action and record["target"] == target
+            for record in self.approvals
+        )
+
+    def send_message(self, channel: str, text: str, author: str) -> dict[str, Any]:
+        message = {"message_id": f"MSG-{len(self.outbox) + 1:03d}", "channel": channel, "text": text, "author": author, "time": self.clock.label(self.state.tick), "tick": self.state.tick}
+        self.outbox.append(message)
+        return {"message_id": message["message_id"], "channel": channel, "status": "sent"}
 
     # Information for the agent's first message ---------------------------
 

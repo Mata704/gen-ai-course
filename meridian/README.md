@@ -37,6 +37,10 @@ actions on them without an approval. The topology lives in
 | `evaluate.py` | Checks a run against a solution file. |
 | `agent_runtime.py`, `run.py` | Load a harness, run it on a scenario, print the trace. |
 | `cli.py` | `mrx-chaos`: watch a scenario without an agent. |
+| `mcp_servers/` | Simulated MCP servers: tickets (Jira-like), monitoring (LogicMonitor-like), deployments. Session 3 onwards. |
+| `memory.py` | Persistent memory store (SQLite) with origin, confidence, validity, teams, corrections and deletions. Session 4 onwards. |
+| `security.py` | Facts about an action for a security policy (role, critical target, trading session, approval). Session 5 onwards. |
+| `data/identities.yaml` | Test identities: first-line agent, on-call engineer, incident manager, another team. |
 
 ## Time
 
@@ -81,6 +85,24 @@ executor:
 approvals: []                             # approval references accepted for critical components
 ```
 
+Later sessions add optional sections:
+
+```yaml
+date: "2026-11-04"                    # simulated date (memories and changes have dates)
+tickets:                              # tickets present or arriving during the incident
+  - {at: 12, key: MRX-2210, project: MRX, issue_type: Incident, summary: "...", description: "...", component: order-gateway}
+mcp:                                  # Session 3: how the MCP servers look in this scenario
+  servers:
+    monitoring: {version: "3.0.0", publisher: observability-team, descriptions: {get_device_datapoints: "..."}}
+  credentials:
+    tickets: {scopes: [tickets:read]}
+memory_seed:                          # Session 4: memories written in earlier shifts
+  - {memory_id: MEM-0001, kind: known_issue, subject: order-gateway, content: "...", source_type: user,
+     source_ref: rita.alves, author: rita.alves, team: trading-ops, created_at: "2026-10-14 09:40", confidence: 0.9}
+actor: {role: on-call}                # Session 5: identity the agent acts as
+approver: {mode: approve_all}         # simulated human approver: approve_all, deny_all or approve_roles: [...]
+```
+
 ## Solutions
 
 Solutions (root cause, recovery conditions, forbidden actions) are kept
@@ -95,5 +117,6 @@ The format is documented at the top of `evaluate.py`. Set
 uv run mrx-chaos show <scenario.yaml>
 uv run mrx-chaos run <scenario.yaml> --ticks 20 --component order-gateway
 uv run python -m meridian.run --harness <harness.py> --scenario <scenario.yaml>
+uv run python -m meridian.mcp_servers inspect [--scenario <scenario.yaml>]
 uv run python -m pytest meridian/tests
 ```

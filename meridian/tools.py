@@ -49,6 +49,7 @@ def load_runbooks() -> list[dict[str, Any]]:
 @dataclass
 class MeridianTools:
     sim: Simulator
+    actor: str = "agent-first-line"
     trace: list[ToolCall] = field(default_factory=list)
     _calls: dict[str, int] = field(default_factory=dict)
 
@@ -74,6 +75,8 @@ class MeridianTools:
             except KeyError as missing:
                 result = {"error": str(missing).strip("'\"")}
                 error = result["error"]
+        if error is None and isinstance(result, dict) and isinstance(result.get("error"), str):
+            error = result["error"]
         self.trace.append(ToolCall(len(self.trace) + 1, tick, self.sim.clock.label(tick), tool, args, result, error))
         self.sim.agent_action()
         return result
@@ -150,7 +153,7 @@ class MeridianTools:
                     "kind": change.kind,
                     "description": change.description,
                     "at_tick": change.at,
-                    "at": self.sim.clock.label(change.at) if change.at > -1440 else "previous days",
+                    "at": self.sim.clock.timestamp(change.at),
                     "active": change.active,
                 }
                 for change in sorted(self.sim.state.changes, key=lambda change: change.at, reverse=True)
@@ -175,19 +178,58 @@ class MeridianTools:
 
         return self._run("read_runbook", {"name": name, "version": version}, fn)
 
+    def exchange_status(self) -> dict[str, Any]:
+        def fn():
+            tick = self.sim.state.tick
+            return {
+                "time": self.sim.clock.timestamp(tick),
+                "trading_session_open": self.sim.clock.is_trading_session(tick),
+                "trading_hours": f"{self.sim.state.trading_open}-{self.sim.state.trading_close}",
+            }
+
+        return self._run("exchange_status", {}, fn)
+
+    # Tickets (native access; Session 3 exposes the same data through MCP) --
+
+    def search_tickets(self, text: str | None = None, status: str | None = None, component: str | None = None, limit: int = 20) -> dict[str, Any]:
+        def fn():
+            found = self.sim.tickets.search(text=text, status=status, component=component)
+            return {"total": len(found), "tickets": [ticket.public(with_comments=False) for ticket in found[:limit]]}
+
+        return self._run("search_tickets", {"text": text, "status": status, "component": component, "limit": limit}, fn)
+
+    def read_ticket(self, key: str) -> dict[str, Any]:
+        return self._run("read_ticket", {"key": key}, lambda: self.sim.tickets.get(key).public())
+
+    def comment_ticket(self, key: str, body: str) -> dict[str, Any]:
+        def fn():
+            tick = self.sim.state.tick
+            return {"key": key, "comment": self.sim.tickets.comment(key, body, self.actor, tick, self.sim.clock)}
+
+        return self._run("comment_ticket", {"key": key, "body": body}, fn)
+
+    # Approvals and outbound messages ---------------------------------------
+
+    def request_approval(self, action: str, target: str, reason: str, approver_role: str = "on-call") -> dict[str, Any]:
+        args = {"action": action, "target": target, "reason": reason, "approver_role": approver_role}
+        return self._run("request_approval", args, lambda: self.sim.request_approval(action, target, reason, approver_role, self.actor))
+
+    def send_message(self, channel: str, text: str) -> dict[str, Any]:
+        return self._run("send_message", {"channel": channel, "text": text}, lambda: self.sim.send_message(channel, text, self.actor))
+
     # Actions ---------------------------------------------------------------
 
     def restart_instance(self, instance_id: str, idempotency_key: str | None = None, confirmation_ref: str | None = None) -> dict[str, Any]:
         args = {"instance_id": instance_id, "idempotency_key": idempotency_key, "confirmation_ref": confirmation_ref}
-        return self._run("restart_instance", args, lambda: self.sim.executor.execute("restart_instance", instance_id, idempotency_key=idempotency_key, confirmation_ref=confirmation_ref))
+        return self._run("restart_instance", args, lambda: self.sim.executor.execute("restart_instance", instance_id, idempotency_key=idempotency_key, actor=self.actor, confirmation_ref=confirmation_ref))
 
     def restart_service(self, component: str, idempotency_key: str | None = None, confirmation_ref: str | None = None) -> dict[str, Any]:
         args = {"component": component, "idempotency_key": idempotency_key, "confirmation_ref": confirmation_ref}
-        return self._run("restart_service", args, lambda: self.sim.executor.execute("restart_service", component, idempotency_key=idempotency_key, confirmation_ref=confirmation_ref))
+        return self._run("restart_service", args, lambda: self.sim.executor.execute("restart_service", component, idempotency_key=idempotency_key, actor=self.actor, confirmation_ref=confirmation_ref))
 
     def rollback_change(self, change_id: str, idempotency_key: str | None = None, confirmation_ref: str | None = None) -> dict[str, Any]:
         args = {"change_id": change_id, "idempotency_key": idempotency_key, "confirmation_ref": confirmation_ref}
-        return self._run("rollback_change", args, lambda: self.sim.executor.execute("rollback_change", change_id, idempotency_key=idempotency_key, confirmation_ref=confirmation_ref))
+        return self._run("rollback_change", args, lambda: self.sim.executor.execute("rollback_change", change_id, idempotency_key=idempotency_key, actor=self.actor, confirmation_ref=confirmation_ref))
 
     def action_status(self, idempotency_key: str) -> dict[str, Any]:
         return self._run("action_status", {"idempotency_key": idempotency_key}, lambda: self.sim.executor.status(idempotency_key))

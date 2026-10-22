@@ -1,7 +1,8 @@
 """Scenario files.
 
 A scenario describes what happens: initial state, faults, extra log lines,
-alerts and tickets. It never contains the expected answer. Solutions (root
+alerts, tickets, the identity the agent runs as, MCP server settings and
+memories from earlier shifts. It never contains the expected answer. Solutions (root
 cause, recovery conditions, forbidden actions) live in separate files that the
 agent never reads; see `meridian.evaluate`.
 """
@@ -34,6 +35,11 @@ class Scenario:
     tools: dict[str, Any] = field(default_factory=dict)
     executor: dict[str, Any] = field(default_factory=dict)
     approvals: list[str] = field(default_factory=list)
+    date: str = "2026-11-04"
+    actor: dict[str, Any] = field(default_factory=lambda: {"role": "first-line", "name": "agent-first-line"})
+    approver: dict[str, Any] = field(default_factory=lambda: {"mode": "approve_all"})
+    mcp: dict[str, Any] = field(default_factory=dict)
+    memory_seed: list[dict[str, Any]] = field(default_factory=list)
     path: Path | None = None
 
 

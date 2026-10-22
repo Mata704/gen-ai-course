@@ -159,6 +159,8 @@ class Alert:
     resolved_tick: int | None = None
     auto_resolve: bool = True
     notification: str = "delivered"
+    acked: bool = False
+    ack_comment: str | None = None
 
     def public(self) -> dict[str, Any]:
         return {
@@ -181,6 +183,7 @@ class AlertStore:
     alerts: list[Alert] = field(default_factory=list)
     _above: dict[tuple[str, str, str | None], int] = field(default_factory=dict)
     _below: dict[tuple[str, str, str | None], int] = field(default_factory=dict)
+    suppressed_until: dict[str, int] = field(default_factory=dict)  # component -> tick (scheduled downtime)
 
     def new_id(self) -> str:
         self.next_number += 1
@@ -202,6 +205,8 @@ class AlertStore:
         if firing:
             self._above[key] = self._above.get(key, 0) + 1
             self._below[key] = 0
+            if tick < self.suppressed_until.get(component, -1):
+                return
             if self._above[key] >= OPEN_AFTER_TICKS and self.find_open(rule, component, instance) is None:
                 self.open_alert(rule, component, tick, clock, instance)
         else:
@@ -227,8 +232,135 @@ class AlertStore:
 
 
 @dataclass
-class TicketStore:
-    tickets: list[dict[str, Any]] = field(default_factory=list)
+class Ticket:
+    key: str
+    project: str
+    issue_type: str
+    summary: str
+    description: str
+    status: str
+    priority: str
+    component: str | None
+    reporter: str
+    created_tick: int
+    created_at: str
+    labels: list[str] = field(default_factory=list)
+    comments: list[dict[str, Any]] = field(default_factory=list)
+    links: list[dict[str, str]] = field(default_factory=list)
+    created_by_agent: bool = False
+    updated_by_agent: bool = False
 
-    def add(self, ticket: dict[str, Any]) -> None:
+    def public(self, with_comments: bool = True) -> dict[str, Any]:
+        data = {
+            "key": self.key,
+            "project": self.project,
+            "issue_type": self.issue_type,
+            "summary": self.summary,
+            "status": self.status,
+            "priority": self.priority,
+            "component": self.component,
+            "reporter": self.reporter,
+            "created": self.created_at,
+            "labels": list(self.labels),
+            "links": list(self.links),
+        }
+        if with_comments:
+            data["description"] = self.description
+            data["comments"] = list(self.comments)
+        return data
+
+
+TICKET_STATUSES = ("Open", "In Progress", "Waiting", "Resolved", "Closed")
+
+
+@dataclass
+class TicketStore:
+    """A small Jira-like ticket system: projects, issues, comments and links."""
+
+    tickets: list[Ticket] = field(default_factory=list)
+    next_number: int = 2400
+
+    def _new_key(self, project: str) -> str:
+        self.next_number += 1
+        return f"{project}-{self.next_number}"
+
+    def add(self, entry: dict[str, Any], tick: int, clock: SimClock) -> Ticket:
+        """Add a ticket defined by a scenario."""
+        project = entry.get("project", "MRX")
+        ticket = Ticket(
+            key=entry.get("key") or self._new_key(project),
+            project=project,
+            issue_type=entry.get("issue_type", "Incident"),
+            summary=entry["summary"],
+            description=entry.get("description", ""),
+            status=entry.get("status", "Open"),
+            priority=entry.get("priority", "Medium"),
+            component=entry.get("component"),
+            reporter=entry.get("reporter", "member-support"),
+            created_tick=tick,
+            created_at=clock.timestamp(tick),
+            labels=list(entry.get("labels", [])),
+            comments=[{**comment, "created": clock.timestamp(tick)} for comment in entry.get("comments", [])],
+            links=list(entry.get("links", [])),
+        )
         self.tickets.append(ticket)
+        return ticket
+
+    def get(self, key: str) -> Ticket:
+        for ticket in self.tickets:
+            if ticket.key == key:
+                return ticket
+        raise KeyError(f"Unknown ticket: {key}")
+
+    def search(
+        self,
+        text: str | None = None,
+        status: str | None = None,
+        component: str | None = None,
+        project: str | None = None,
+        issue_type: str | None = None,
+    ) -> list[Ticket]:
+        words = [word for word in (text or "").lower().split() if word]
+        found = []
+        for ticket in self.tickets:
+            haystack = f"{ticket.key} {ticket.summary} {ticket.description} {ticket.component or ''} {' '.join(ticket.labels)}".lower()
+            if words and not any(word in haystack for word in words):
+                continue
+            if status and ticket.status.lower() != status.lower():
+                continue
+            if component and ticket.component != component:
+                continue
+            if project and ticket.project != project:
+                continue
+            if issue_type and ticket.issue_type.lower() != issue_type.lower():
+                continue
+            found.append(ticket)
+        return found
+
+    def create(self, fields: dict[str, Any], author: str, tick: int, clock: SimClock) -> Ticket:
+        ticket = self.add({**fields, "reporter": author}, tick, clock)
+        ticket.created_by_agent = True
+        return ticket
+
+    def comment(self, key: str, body: str, author: str, tick: int, clock: SimClock) -> dict[str, Any]:
+        ticket = self.get(key)
+        comment = {"author": author, "body": body, "created": clock.timestamp(tick)}
+        ticket.comments.append(comment)
+        ticket.updated_by_agent = True
+        return comment
+
+    def transition(self, key: str, status: str, author: str) -> Ticket:
+        ticket = self.get(key)
+        if status not in TICKET_STATUSES:
+            raise KeyError(f"Unknown status {status!r}; use one of {', '.join(TICKET_STATUSES)}")
+        ticket.status = status
+        ticket.updated_by_agent = True
+        return ticket
+
+    def link(self, key: str, other: str, link_type: str, author: str) -> Ticket:
+        ticket, target = self.get(key), self.get(other)
+        ticket.links.append({"type": link_type, "key": target.key})
+        target.links.append({"type": link_type, "key": ticket.key})
+        ticket.updated_by_agent = True
+        target.updated_by_agent = True
+        return ticket

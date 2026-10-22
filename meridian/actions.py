@@ -113,8 +113,8 @@ class ActionExecutor:
             record = self._record(action, target, "rejected", str(error).strip("'\""), False, idempotency_key, actor, confirmation_ref)
             return {**record.public(), "status": "rejected"}
 
-        if component.critical and confirmation_ref not in self.sim.scenario.approvals:
-            record = self._record(action, target, "rejected", f"{component.name} is a critical component: a valid approval from the on-call engineer is required.", False, idempotency_key, actor, confirmation_ref)
+        if component.critical and not self.sim.approval_valid(confirmation_ref, action, target):
+            record = self._record(action, target, "rejected", f"{component.name} is a critical component: a valid approval for this action and target is required.", False, idempotency_key, actor, confirmation_ref)
             return {**record.public(), "status": "rejected"}
 
         detail = self._apply(action, target)

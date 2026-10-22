@@ -42,6 +42,9 @@ gen-ai-course/
 - [`meridian/`](meridian/) — the Meridian Exchange simulator shared by every Course 2 session and the project.
 - [`sessions/course-02-agentic-ai/01-agent-harness/`](sessions/course-02-agentic-ai/01-agent-harness/) — agent harnesses with PydanticAI: diagnose a failure, change one part, compare versions.
 - [`sessions/course-02-agentic-ai/02-context-tools-skills/`](sessions/course-02-agentic-ai/02-context-tools-skills/) — context selection, tool interfaces, runbooks as procedures and idempotent actions.
+- [`sessions/course-02-agentic-ai/03-mcp-integration/`](sessions/course-02-agentic-ai/03-mcp-integration/) — MCP servers for tickets, monitoring and deployments: catalog selection, correlation of sources, governance and scopes.
+- [`sessions/course-02-agentic-ai/04-memory/`](sessions/course-02-agentic-ai/04-memory/) — memory between runs as data: origin, confidence, validity, conflicts, deletion, isolation and handover.
+- [`sessions/course-02-agentic-ai/05-security/`](sessions/course-02-agentic-ai/05-security/) — threat model, PII, authorization, approvals, the trading-session freeze and attack/defence cases.
 - [`projects/course-02-agentic-ai/`](projects/course-02-agentic-ai/) — the evolving Course 2 project.
 
 ## Getting started
