@@ -1,0 +1,36 @@
+# Log lines generated from the simulator state. {placeholders} are filled in
+# by meridian.signals. Background lines are picked at random (seeded).
+background:
+  order-gateway:
+    - "INFO  session heartbeat ok member={member}"
+    - "INFO  order accepted id={order_id} member={member} side={side}"
+    - "DEBUG pool stats active={active} idle={idle}"
+  matching-engine:
+    - "INFO  book update symbol={symbol} depth={depth}"
+    - "INFO  trade executed symbol={symbol} qty={qty}"
+  market-data:
+    - "INFO  feed tick symbol={symbol} seq={seq}"
+  settlement:
+    - "INFO  settlement batch queued size={qty}"
+  reference-db:
+    - "INFO  checkpoint complete wal={seq}"
+    - "INFO  connection accepted client={client}"
+dependency_down:
+  - "ERROR connection refused to {target}:5432 (attempt {attempt})"
+  - "ERROR upstream {target} unavailable, rejecting order id={order_id}"
+dependency_degraded:
+  - "WARN  slow response from {target} took={took}ms"
+memory_pressure:
+  - "WARN  GC pause {took}ms heap={memory}%"
+memory_crash:
+  - "ERROR OutOfMemoryError: Java heap space, instance exiting"
+cpu_pressure:
+  - "WARN  event loop lag {took}ms cpu={cpu}%"
+error_rate:
+  - "ERROR request failed code=503 reason={reason}"
+restart:
+  - "INFO  instance starting version={version}"
+ready:
+  - "INFO  instance ready"
+queue_backlog:
+  - "WARN  inbound queue depth={queue}"

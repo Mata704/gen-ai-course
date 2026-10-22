@@ -1,0 +1,57 @@
+# Meridian Exchange: fictional topology used by the simulator.
+# Each component lists the components it depends on. A link is created for
+# every dependency. Critical components cannot be changed by first-line agents.
+calendar:
+  trading_open: "09:00"
+  trading_close: "17:30"
+
+components:
+  order-gateway:
+    critical: false
+    version: "2.4.0"
+    instances: 2
+    base_latency_ms: 5
+    depends_on: [reference-db, matching-engine]
+    inflow_per_tick: 50
+    capacity_per_tick: 70
+  matching-engine:
+    critical: true
+    version: "7.1.2"
+    instances: 2
+    base_latency_ms: 2
+    depends_on: [market-data]
+  market-data:
+    critical: false
+    version: "3.0.5"
+    instances: 2
+    base_latency_ms: 3
+    depends_on: []
+  settlement:
+    critical: false
+    version: "1.9.0"
+    instances: 1
+    base_latency_ms: 20
+    depends_on: [matching-engine, reference-db]
+  reference-db:
+    critical: true
+    version: "14.2"
+    instances: 2
+    base_latency_ms: 2
+    depends_on: []
+
+# Changes that already happened before any scenario starts.
+history:
+  - change_id: CHG-4310
+    component: order-gateway
+    kind: deploy
+    description: "Deploy order-gateway 2.4.0 (connection pooling changes)"
+    at: -1440
+    version_before: "2.3.9"
+    version_after: "2.4.0"
+  - change_id: CHG-4302
+    component: market-data
+    kind: deploy
+    description: "Deploy market-data 3.0.5"
+    at: -2880
+    version_before: "3.0.4"
+    version_after: "3.0.5"

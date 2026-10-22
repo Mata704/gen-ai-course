@@ -9,6 +9,7 @@ material close to the concepts taught in each class.
 ```text
 gen-ai-course/
 ├── docs/                 setup and pre-reads
+├── meridian/             Course 2 simulator (Meridian Exchange)
 ├── sessions/
 │   ├── course-01-ai-fundamentals/   one folder per session
 │   └── course-02-agentic-ai/        one folder per session
@@ -38,7 +39,9 @@ gen-ai-course/
 
 ### Course 2 — Agentic AI
 
-- [`sessions/course-02-agentic-ai/`](sessions/course-02-agentic-ai/) — session material, added session by session.
+- [`meridian/`](meridian/) — the Meridian Exchange simulator shared by every Course 2 session and the project.
+- [`sessions/course-02-agentic-ai/01-agent-harness/`](sessions/course-02-agentic-ai/01-agent-harness/) — agent harnesses with PydanticAI: diagnose a failure, change one part, compare versions.
+- [`sessions/course-02-agentic-ai/02-context-tools-skills/`](sessions/course-02-agentic-ai/02-context-tools-skills/) — context selection, tool interfaces, runbooks as procedures and idempotent actions.
 - [`projects/course-02-agentic-ai/`](projects/course-02-agentic-ai/) — the evolving Course 2 project.
 
 ## Getting started
@@ -62,6 +65,13 @@ Run an exercise from the repository root with `uv run`, for example:
 
 ```text
 uv run python sessions/course-01-ai-fundamentals/01-llm-apis/starter/01_first_call.py
+```
+
+Course 2 uses the `meridian` simulator, installed by `uv sync`. Its checks run
+without an API key:
+
+```text
+uv run python -m pytest meridian/tests
 ```
 
 ## Principles
