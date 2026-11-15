@@ -10,7 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from data_quality_agent.simulator.destination import (
-    DEFAULT_DATABASE,
+    DEFAULT_WAREHOUSE,
     DeliveryVerificationError,
     SQLiteDestination,
 )
@@ -19,6 +19,7 @@ from data_quality_agent.simulator.models import (
     Fault,
     FaultKind,
     LogLevel,
+    PipelineConfig,
     PipelineDefinition,
     PipelineEvent,
     PipelineIncident,
@@ -31,6 +32,7 @@ from data_quality_agent.simulator.models import (
     StageStatus,
 )
 from data_quality_agent.simulator.quality import check_quality
+from data_quality_agent.simulator.rule_library import load_general_rules, resolve_pipeline
 
 SIMULATOR_DIR = Path(__file__).parent
 PIPELINES_DIR = SIMULATOR_DIR / "definitions"
@@ -47,17 +49,19 @@ def load_scenario(path: str | Path) -> Scenario:
 
 
 def load_pipeline(pipeline_id: str) -> PipelineDefinition:
+    """The pipeline file resolved against the general rules, so it holds its effective rules."""
     path = PIPELINES_DIR / f"{pipeline_id}.json"
     if not path.is_file():
         raise FileNotFoundError(f"Unknown pipeline definition: {pipeline_id}")
-    return PipelineDefinition.model_validate_json(path.read_text(encoding="utf-8"))
+    config = PipelineConfig.model_validate_json(path.read_text(encoding="utf-8"))
+    return resolve_pipeline(config, load_general_rules())
 
 
 class PipelineSimulator:
     """Simulate ingestion, transformation, a quality gate and SQLite delivery."""
 
-    def __init__(self, database_path: str | Path = DEFAULT_DATABASE) -> None:
-        self.destination = SQLiteDestination(database_path)
+    def __init__(self, warehouse_path: str | Path = DEFAULT_WAREHOUSE) -> None:
+        self.destination = SQLiteDestination(warehouse_path)
 
     def run(
         self,
@@ -103,7 +107,9 @@ class PipelineSimulator:
         input_path: str | Path | None,
     ) -> None:
         recorder.start(StageName.INGESTION)
-        recorder.log(f"Scenario '{scenario.scenario_id}': {scenario.description}")
+        recorder.log(
+            f"Scenario '{scenario.scenario_id}': {scenario.description}", simulation_only=True,
+        )
         for fault in scenario.faults:
             if fault.kind == FaultKind.SOURCE_UNAVAILABLE:
                 result.errors.append("Synthetic source is unavailable.")
@@ -134,7 +140,10 @@ class PipelineSimulator:
                 result.delay_minutes += self._required(fault.delay_minutes, "delay_minutes", fault)
             else:
                 self._apply_data_fault(records, fault)
-            recorder.log(f"Injected scenario fault: {_describe_fault(fault)}", LogLevel.WARNING)
+            recorder.log(
+                f"Injected scenario fault: {_describe_fault(fault)}", LogLevel.WARNING,
+                simulation_only=True,
+            )
         result.input_records = records
         recorder.log(f"Batch contains {len(records)} records after ingestion.")
         recorder.finish(StageName.INGESTION, StageStatus.SUCCEEDED)
@@ -302,8 +311,13 @@ class _RunRecorder:
         self._current = stage
         self._emit(EventKind.STAGE_STARTED, f"Started {stage.value}.", stage=stage)
 
-    def log(self, message: str, level: LogLevel = LogLevel.INFO) -> None:
-        self._emit(EventKind.LOG, message, stage=self._current, level=level)
+    def log(
+        self, message: str, level: LogLevel = LogLevel.INFO, *, simulation_only: bool = False,
+    ) -> None:
+        self._emit(
+            EventKind.LOG, message, stage=self._current, level=level,
+            simulation_only=simulation_only,
+        )
 
     def finish(self, stage: StageName, status: StageStatus) -> None:
         self._finish_earlier(stage)
@@ -340,6 +354,7 @@ class _RunRecorder:
         stage: StageName | None = None,
         status: StageStatus | None = None,
         level: LogLevel = LogLevel.INFO,
+        simulation_only: bool = False,
     ) -> None:
         event = PipelineEvent(
             sequence=len(self._result.events),
@@ -350,6 +365,7 @@ class _RunRecorder:
             status=status,
             level=level,
             message=message,
+            simulation_only=simulation_only,
         )
         self._result.events.append(event)
         if self._listener is not None:

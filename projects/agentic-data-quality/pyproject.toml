@@ -5,6 +5,7 @@ description = "Local synthetic data-pipeline simulator for an agentic Data Quali
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "fastmcp-slim[server]>=4.1",
     "pydantic>=2.0.0",
     "streamlit>=1.40",
 ]
@@ -17,6 +18,8 @@ dev = [
 [project.scripts]
 data-quality-sim = "data_quality_agent.simulator.cli:main"
 data-quality-ui = "data_quality_agent.ui.launcher:main"
+data-quality-mcp = "data_quality_agent.mcp.server:main"
+data-quality-mcp-lock = "data_quality_agent.tools.platform_client:main"
 
 [build-system]
 requires = ["hatchling"]

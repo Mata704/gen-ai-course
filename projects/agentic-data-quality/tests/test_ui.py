@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from data_quality_agent.persistence import Database, RunRepository
 from data_quality_agent.simulator.engine import SCENARIOS_DIR, PipelineSimulator
 from data_quality_agent.simulator.models import EventKind, PipelineEvent, StageName
 from data_quality_agent.ui.view_model import RunTracker, StepState, run_metrics
@@ -12,7 +13,7 @@ APP_PATH = Path(__file__).parents[1] / "src" / "data_quality_agent" / "ui" / "ap
 
 @pytest.fixture
 def simulator(tmp_path: Path) -> PipelineSimulator:
-    return PipelineSimulator(database_path=tmp_path / "output.sqlite3")
+    return PipelineSimulator(warehouse_path=tmp_path / "output.sqlite3")
 
 
 def test_tracker_shows_the_current_step_while_the_run_is_in_progress(
@@ -53,9 +54,10 @@ def test_metrics_summarize_a_blocked_run(simulator: PipelineSimulator) -> None:
 
 
 def test_app_runs_selected_scenarios_and_keeps_their_history(tmp_path: Path) -> None:
+    database = tmp_path / "ui.sqlite3"
     app = AppTest.from_file(str(APP_PATH), default_timeout=30).run()
     assert not app.exception
-    app.text_input(key="database").set_value(str(tmp_path / "ui.sqlite3"))
+    app.text_input(key="database").set_value(str(database))
     app.slider(key="pause").set_value(0.0)
 
     app.selectbox(key="scenario").select("orders-quality-issues")
@@ -66,11 +68,15 @@ def test_app_runs_selected_scenarios_and_keeps_their_history(tmp_path: Path) -> 
     assert not app.exception
     assert app.subheader[0].value == "✅ Concluída — healthy-orders"
     assert len(app.radio(key="selected_run").options) == 2
-    assert (tmp_path / "ui.sqlite3").is_file()
 
-    blocked_run = app.radio(key="selected_run").options[1]
-    app.radio(key="selected_run").set_value(app.session_state["runs"][1]["result"].run_id).run()
+    blocked = RunRepository(Database(database)).list_runs(status="blocked")[0]
+    app.radio(key="selected_run").set_value(blocked.run_id).run()
 
-    assert "Bloqueada" in blocked_run
     assert app.subheader[0].value == "⛔ Bloqueada — orders-quality-issues"
     assert any("Regras que falharam" in markdown.value for markdown in app.markdown)
+
+    # The history lives in SQLite, so a new browser session sees the same runs.
+    fresh = AppTest.from_file(str(APP_PATH), default_timeout=30).run()
+    fresh.text_input(key="database").set_value(str(database)).run()
+    assert len(fresh.radio(key="selected_run").options) == 2
+    assert fresh.subheader[0].value == "✅ Concluída — healthy-orders"

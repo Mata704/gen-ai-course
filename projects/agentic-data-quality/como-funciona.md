@@ -35,7 +35,7 @@ flowchart TD
     U -- Sim --> W[Transformar e normalizar os registos]
     W --> C[Bloco de Data Quality determinístico]
     C --> D{Há problema?}
-    D -- Não --> LOAD[Carregar dados aprovados em SQLite]
+    D -- Não --> LOAD[Carregar dados aprovados no destino SQLite]
     LOAD --> V{Carregamento confirmado?}
     V -- Sim --> E[Apresentar resultado confirmado]
     V -- Não --> S[Manter problema por resolver e apresentar motivo]
@@ -52,8 +52,8 @@ flowchart TD
 
     subgraph TL[Camada de tools - controlada por hooks em código]
         HB{Hook antes da tool:<br/>tool permitida a este agente<br/>e a este utilizador?}
-        TP[Tools Python locais:<br/>execução, registos, regras, métricas]
-        MCP[Servidor MCP local:<br/>runbooks, incidentes, ações]
+        TP[Tools locais - base SQLite local:<br/>execuções, logs, regras, registos, incidentes, runbooks]
+        MCP[Servidor MCP - plataforma da origem, só leitura:<br/>contrato, alterações de esquema, estado da origem, clientes]
         HA[Hook depois da tool:<br/>auditoria e guardrails]
     end
 
@@ -73,7 +73,7 @@ flowchart TD
     L -- Sim --> M{Pessoa aprova?}
     M -- Não --> N[Não executar, registar decisão e informar o orquestrador]
     N --> G
-    M -- Sim --> O[Executar ação simulada através da tool MCP]
+    M -- Sim --> O[Executar ação simulada através de uma tool local]
     L -- Não --> O
     O --> HA
     O --> P[Repetir as etapas afetadas e o bloco de Data Quality]
@@ -85,10 +85,18 @@ flowchart TD
     Q -- Não, sem mais opções --> S
 ```
 
-Os agentes **nunca acedem diretamente** aos dados, ao SQLite ou ao simulador:
-tudo passa por tools. E todas as chamadas de tools passam por **hooks**, que
-são verificações em código executadas sempre, seja qual for a decisão do
-modelo.
+Os agentes **nunca acedem diretamente** aos dados, às bases SQLite ou ao
+simulador: tudo passa por tools. E todas as chamadas de tools passam por
+**hooks**, que são verificações em código executadas sempre, seja qual for a
+decisão do modelo.
+
+Há **três bases de dados com papéis diferentes**:
+
+| | Destino | Base de controlo | Plataforma da origem (via MCP) |
+|---|---|---|---|
+| O que é | O "data warehouse" que recebe os dados | O que a nossa pipeline regista sobre si própria | Um sistema da equipa que envia as encomendas |
+| Controlo | Só a etapa de carregamento escreve, e só dados aprovados | Nosso: lemos e escrevemos | Não é nosso: já tem dados e só a consultamos |
+| Exemplos | Encomendas aprovadas | Execuções, logs, regras falhadas, incidentes, auditoria | Contrato do dataset, alterações de esquema anunciadas, estado da origem, incidentes da origem, cadastro de clientes |
 
 O orquestrador **não segue uma ordem fixa**. Funciona como um coordenador:
 recebe o incidente, decide que sub-agents chamar, recebe os resultados e decide
@@ -118,9 +126,9 @@ sub-agents **só falam com o orquestrador**: não se chamam uns aos outros.
 sequenceDiagram
     participant SA as Sub-agent
     participant HB as Hook antes da tool
-    participant T as Tool Python ou MCP local
+    participant T as Tool local ou tool MCP
     participant HA as Hook depois da tool
-    participant DB as Registo SQLite
+    participant DB as Auditoria (base local)
 
     SA->>HB: Quero usar a tool X com estes argumentos
     alt Tool não permitida ou argumentos inválidos
@@ -136,19 +144,20 @@ sequenceDiagram
 
 | Hook | Quando corre | O que verifica |
 |---|---|---|
-| Antes da tool | Antes de cada chamada | A tool está na lista deste agente? O utilizador tem permissão? A ação exige aprovação? Os argumentos são válidos? |
-| Depois da tool | Depois de cada chamada | Regista a chamada para auditoria e passa o resultado pelos guardrails (por exemplo, dados pessoais ou instruções escondidas nos logs). |
+| Antes da tool | Antes de cada chamada | A tool está na lista deste agente? Se for MCP, a sua descrição é a que foi revista? O utilizador tem permissão? A ação exige aprovação? Os argumentos são válidos? |
+| Depois da tool | Depois de cada chamada | Regista a chamada para auditoria e passa o resultado pelos guardrails (por exemplo, dados pessoais ou instruções escondidas no texto vindo da plataforma da origem). |
 | Fim da execução | Antes da resposta final | A conclusão tem evidência de tools? Uma recuperação só é aceite se a revalidação a confirmar. |
 
-Cada sub-agent só tem acesso às tools de que precisa:
+Cada sub-agent só tem acesso às tools de que precisa, locais e MCP. **As tools
+de consulta já existem**; as de ação ainda não.
 
-| Sub-agent | Tools previstas | Origem |
-|---|---|---|
-| Qualidade dos dados | Consultar resultados das regras, registos afetados e métricas do lote. | Python local |
-| Diagnóstico da pipeline | Consultar estado das etapas, logs, dependências e runbooks. | Python local e MCP |
-| Remediação | Pedir ações como repetir a leitura da origem ou reprocessar um lote. | MCP (ações) |
-| Revisor | Consultar o resultado da revalidação e o estado do destino. | Python local |
-| Orquestrador | Nenhuma tool de dados; só delega aos sub-agents. | — |
+| Sub-agent | Tools locais (o que aconteceu na pipeline) | Tools MCP (o que diz a origem) | Estado |
+|---|---|---|---|
+| Qualidade dos dados | Regras, resultados das regras, registos afetados, métricas do lote e runbook. | Contrato do dataset, alterações de esquema e cadastro de clientes. | Disponível |
+| Diagnóstico da pipeline | Resumo e logs da execução, execuções recentes, comparação com o último sucesso, incidente e runbook. | Contrato, alterações de esquema, estado da origem e incidentes da origem. | Disponível |
+| Remediação | Incidente e runbook; mais tarde, pedir ações como repetir a leitura ou reprocessar um lote. | Estado da origem e incidentes da origem. | Consultas disponíveis; ações por fazer |
+| Revisor | Resultados das regras, resumo da execução e estado do destino. | Contrato do dataset. | Disponível |
+| Orquestrador | Nenhuma tool de dados; recebe um resumo curto do incidente e delega. | — | Resumo disponível |
 
 Uma falha na pipeline ou numa ferramenta também deve ser apresentada como tal.
 Se o sistema não conseguir confirmar o resultado, não deve dizer que o problema
@@ -185,9 +194,10 @@ aprovadas.
 
 ### Passo 3 — Guardar e investigar o incidente
 
-Atualmente, o incidente e as evidências aparecem no resultado JSON, com a
-análise pendente. Mais tarde, o sistema também deverá persistir esse contexto
-em SQLite para o tratamento e a retoma. O **orquestrador** — o agente que
+Cada execução fica guardada em SQLite: etapas, logs, lote recebido e
+transformado, resultado de cada regra e o incidente. É este contexto que os
+agentes vão consultar através das tools, mesmo noutro processo. O
+**orquestrador** — o agente que
 coordena o trabalho — vai gerir uma equipa de **sub-agents** especialistas:
 
 | Sub-agent | O que deverá fazer |
@@ -221,16 +231,27 @@ Os sub-agents usam **tools** para obter informação, como consultar resultados
 da pipeline ou ler um runbook. Um **runbook** é um procedimento documentado que
 sugere como investigar ou tratar um problema.
 
-- **Tools Python locais:** funções do projeto para consultas simples (regras,
-  registos, métricas, estado das etapas).
-- **Servidor MCP local:** uma forma padronizada de disponibilizar tools aos
-  agentes. Vai expor os runbooks, os incidentes e as ações controladas.
+- **Tools locais:** funções do projeto que só leem a base local e devolvem
+  pouca informação de cada vez (regras, registos afetados, métricas, logs,
+  estado das etapas), com referências para a evidência usada.
+- **Runbooks:** ficheiros versionados com sinais, investigação, causas e
+  remediações possíveis, associados a cada tipo de regra.
+- **Servidor MCP:** representa a plataforma da equipa que envia os dados, um
+  sistema que não controlamos e que já tem dados próprios num SQLite só de
+  leitura. Responde a perguntas como "qual é o contrato deste dataset?",
+  "houve alguma alteração de esquema anunciada?", "a origem está com
+  problemas?" ou "este cliente existe?".
 - **Hooks:** verificações em código que correm antes e depois de cada tool e
   no fim de cada execução (ver a tabela na secção 2). As tools só fazem o seu
   trabalho; os controlos estão todos nos hooks, tal como na sessão 05 do curso.
 
-Nem todas as tools estarão disponíveis para todos os sub-agents, e uma tool
-chamada via MCP passa pelos mesmos hooks que uma tool Python.
+O servidor MCP não conhece os nossos agentes; somos nós que decidimos quem usa
+cada tool. Como a descrição de uma tool MCP pode mudar sem aviso, cada uma é
+revista e fixada por hash (sessão 03 do curso); se mudar, fica bloqueada. Uma
+tool MCP passa pelos mesmos hooks que uma tool local, e todas as chamadas,
+incluindo as bloqueadas, ficam registadas na base local. **Já existem** as
+tools de consulta, os runbooks, o servidor MCP e os hooks antes e depois da
+tool; o hook de fim de execução chega com os agentes.
 
 ### Passo 5 — Decidir se é possível agir
 
@@ -267,8 +288,9 @@ logs e métricas. Mostra a execução como um workflow do GitHub Actions: as
 etapas em fila, a etapa em curso a amarelo e as concluídas, falhadas ou
 ignoradas, cada uma com os seus logs. **Esta parte já existe.**
 
-Mais tarde, a etapa de intervenção mostrará também os passos dos agentes e as
-tools usadas, e o histórico e o estado do workflow ficarão guardados em SQLite.
+O histórico de execuções já é lido de SQLite. Mais tarde, a etapa de
+intervenção mostrará também os passos dos agentes e as tools usadas, e o
+estado do workflow ficará guardado em SQLite.
 
 Se uma execução for interrompida, o sistema deverá conseguir retomá-la:
 recuperar o estado, verificar novamente as permissões e confirmar se uma ação
@@ -304,11 +326,11 @@ ação ainda não existem no simulador atual.
 | Fase | O que vamos construir | Estado |
 |---|---|---|
 | 1. Fundação e simulador | Projeto UV, ingestão JSON, transformação, bloco de qualidade e carregamento SQLite. | **Implementação inicial disponível**, com ponto de intervenção pendente. |
-| 2. Persistência e avaliação | Guardar execuções, incidentes e contexto bloqueado; criar casos de avaliação reproduzíveis. | Por fazer; só o destino dos dados aprovados já usa SQLite. |
-| 3. Ferramentas e runbooks | Disponibilizar consultas, procedimentos e ações simuladas verificáveis. | Por fazer. |
+| 2. Persistência e avaliação | Guardar execuções, incidentes e contexto bloqueado; criar casos de avaliação reproduzíveis. | **Persistência disponível**; casos de avaliação por fazer. |
+| 3. Ferramentas e runbooks | Disponibilizar consultas, procedimentos e ações simuladas verificáveis. | **Consultas e runbooks disponíveis**; ações por fazer. |
 | 4. Agentes | Criar o orquestrador e os sub-agents especialistas com PydanticAI. | Por fazer. |
-| 5. Segurança e retoma | Aplicar permissões, aprovações, registo de decisões e recuperação após interrupções. | Por fazer. |
-| 6. MCP e memória | Integrar ferramentas MCP locais e memória com origem e validade. | Por fazer. |
+| 5. Segurança e retoma | Aplicar permissões, aprovações, registo de decisões e recuperação após interrupções. | Allowlist por agente, limite de chamadas e auditoria disponíveis; aprovações e retoma por fazer. |
+| 6. MCP e memória | Integrar ferramentas MCP locais e memória com origem e validade. | **Servidor MCP da plataforma da origem disponível**; memória por fazer. |
 | 7. Interface e avaliação completa | Interface Streamlit para iniciar, escolher cenários e ver logs e métricas; testar o fluxo de ponta a ponta. | **Interface inicial disponível**; avaliação por fazer. |
 
 As fases serão validadas com testes à medida que forem construídas. A descrição
@@ -319,12 +341,13 @@ mais técnica está na [proposta de arquitetura](proposta-arquitetura.md).
 Hoje é possível executar a pipeline pela linha de comandos ou pela interface
 Streamlit, receber um JSON local (no CLI) e acompanhar as etapas e os logs. Os
 lotes aprovados são efetivamente guardados em SQLite. Os lotes com problemas
-ficam bloqueados e devolvem um incidente para futura análise pelos agentes.
+ficam bloqueados, e todo o seu contexto fica na base local. As tools locais e
+o servidor MCP da plataforma da origem já deixam consultar esse contexto e os
+dados externos.
 
 As instruções de instalação, execução e teste estão no [README](README.md).
-Ainda não existem agentes, persistência do histórico e do contexto dos
-incidentes, retoma ou ações corretivas. As etapas dos agentes e de revalidação
-mostram os pontos de integração; não simulam trabalho já feito.
+Ainda não existem agentes, retoma ou ações corretivas. As etapas dos agentes e
+de revalidação mostram os pontos de integração; não simulam trabalho já feito.
 
 O projeto é local e usa dados fictícios. A escolha do modelo de IA ainda está
 em aberto: usar um fornecedor remoto implicaria chamadas para fora da máquina.

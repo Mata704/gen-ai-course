@@ -7,15 +7,16 @@ from __future__ import annotations
 
 import html
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import streamlit as st
 
-from data_quality_agent.simulator.destination import DEFAULT_DATABASE
-from data_quality_agent.simulator.engine import SCENARIOS_DIR, PipelineSimulator, load_scenario
-from data_quality_agent.simulator.models import EventKind, PipelineEvent, PipelineRun, Scenario
+from data_quality_agent.persistence.database import DEFAULT_DATABASE, Database
+from data_quality_agent.persistence.repository import RunRepository, RunSummary
+from data_quality_agent.service import PipelineService
+from data_quality_agent.simulator.engine import SCENARIOS_DIR, load_scenario
+from data_quality_agent.simulator.models import EventKind, PipelineEvent, PipelineRun, PipelineStatus, Scenario
 from data_quality_agent.ui.view_model import (
     RUN_BADGES,
     STEP_STATE_LABELS,
@@ -26,10 +27,11 @@ from data_quality_agent.ui.view_model import (
     run_metrics,
 )
 
-RUNS_KEY = "runs"
+PAUSES_KEY = "pauses"
 SELECTED_KEY = "selected_run"
 NEXT_SELECTION_KEY = "next_selected_run"
 DEFAULT_SCENARIO = "healthy-orders"
+HISTORY_LIMIT = 50
 _EXPANDED_STATES = {StepState.RUNNING, StepState.FAILED, StepState.WAITING}
 
 
@@ -102,52 +104,59 @@ def execute_run(path: Path, scenario: Scenario, database: str, pause: float) -> 
         if pause and event.kind == EventKind.STAGE_STARTED:
             time.sleep(pause)
 
-    started = datetime.now()
     try:
-        result = PipelineSimulator(database_path=database).run(path, on_event=on_event)
+        result = PipelineService(database).run(path, on_event=on_event)
     except (OSError, ValueError) as error:
         st.error(f"A execução não terminou: {error}")
         return
-    st.session_state[RUNS_KEY].insert(0, {"result": result, "pause": pause, "started": started})
+    st.session_state[PAUSES_KEY][result.run_id] = pause
     st.session_state[NEXT_SELECTION_KEY] = result.run_id
     st.rerun()
 
 
-def render_history(runs: list[dict[str, Any]]) -> None:
+def _local_time(summary: RunSummary) -> str:
+    return f"{summary.started_at.astimezone():%d/%m %H:%M:%S}"
+
+
+def render_history(summaries: list[RunSummary]) -> None:
     st.markdown("#### Execuções")
-    if not runs:
+    if not summaries:
         st.info("Ainda não há execuções. Escolhe um cenário e clica em **Executar pipeline**.")
         return
-    statuses = [entry["result"].pipeline_status for entry in runs]
+    statuses = [PipelineStatus(summary.status) for summary in summaries]
     st.caption("  ·  ".join(f"{RUN_BADGES[status]}: **{statuses.count(status)}**" for status in RUN_BADGES))
-    by_id = {entry["result"].run_id: entry for entry in runs}
+    by_id = {summary.run_id: summary for summary in summaries}
     # A widget's value can only be changed before it is created in the rerun.
     if NEXT_SELECTION_KEY in st.session_state:
         st.session_state[SELECTED_KEY] = st.session_state.pop(NEXT_SELECTION_KEY)
+    if st.session_state.get(SELECTED_KEY) not in by_id:
+        st.session_state.pop(SELECTED_KEY, None)
     st.radio(
         "Execução selecionada",
         options=list(by_id),
         key=SELECTED_KEY,
         label_visibility="collapsed",
         format_func=lambda run_id: (
-            f"{RUN_BADGES[by_id[run_id]['result'].pipeline_status]} · "
-            f"{by_id[run_id]['result'].scenario_id} · {by_id[run_id]['started']:%H:%M:%S}"
+            f"{RUN_BADGES[PipelineStatus(by_id[run_id].status)]} · "
+            f"{by_id[run_id].scenario_id} · {_local_time(by_id[run_id])}"
         ),
     )
+    if len(summaries) == HISTORY_LIMIT:
+        st.caption(f"Mostradas as {HISTORY_LIMIT} execuções mais recentes.")
 
 
-def render_run(entry: dict[str, Any]) -> None:
-    result: PipelineRun = entry["result"]
+def render_run(result: PipelineRun, summary: RunSummary, pause: float | None) -> None:
     tracker = RunTracker.from_events(result.events)
     metrics = run_metrics(result)
 
     st.subheader(f"{RUN_BADGES[result.pipeline_status]} — {result.scenario_id}")
     st.caption(
-        f"Execução `{result.run_id}` · pipeline `{result.pipeline_id}` · "
-        f"iniciada às {entry['started']:%H:%M:%S} · qualidade `{result.quality_status.value}`"
+        f"Execução `{result.run_id}` · pipeline `{result.pipeline_id}` "
+        f"(versão `{summary.pipeline_version}`) · iniciada {_local_time(summary)} · "
+        f"qualidade `{result.quality_status.value}`"
     )
-    if entry["pause"]:
-        st.caption(f"As durações incluem a pausa visual de {entry['pause']:.1f} s por etapa iniciada.")
+    if pause:
+        st.caption(f"As durações incluem a pausa visual de {pause:.1f} s por etapa iniciada.")
 
     cards = [*st.columns(3), *st.columns(3)]
     cards[0].metric("Registos recebidos", metrics.records_received)
@@ -200,7 +209,7 @@ def render_run(entry: dict[str, Any]) -> None:
 
 def main() -> None:
     st.set_page_config(page_title="Pipeline de Data Quality", page_icon="🧪", layout="wide")
-    st.session_state.setdefault(RUNS_KEY, [])
+    st.session_state.setdefault(PAUSES_KEY, {})
     scenarios = load_scenarios()
 
     with st.sidebar:
@@ -210,7 +219,11 @@ def main() -> None:
         st.caption(scenario.description)
         if scenario.faults:
             st.caption("Falhas simuladas: " + ", ".join(fault.kind.value for fault in scenario.faults))
-        database = st.text_input("Destino SQLite", value=str(DEFAULT_DATABASE), key="database")
+        database = st.text_input(
+            "Base de controlo SQLite", value=str(DEFAULT_DATABASE), key="database",
+            help="Histórico das execuções, logs, findings, incidentes e auditoria. "
+            "Os dados aprovados vão para warehouse.sqlite3, na mesma pasta.",
+        )
         pause = st.slider(
             "Pausa visual por etapa (s)", 0.0, 2.0, 0.8, 0.1, key="pause",
             help="Só abranda a apresentação para acompanhar a etapa atual; não altera a pipeline.",
@@ -219,18 +232,19 @@ def main() -> None:
 
     st.title("Pipeline de Data Quality")
     history, detail = st.columns([1, 3], gap="large")
-    runs = st.session_state[RUNS_KEY]
+    runs = RunRepository(Database(database))
+    summaries = runs.list_runs(finished_only=True, limit=HISTORY_LIMIT)
     with history:
-        render_history(runs)
+        render_history(summaries)
     with detail:
         if run_clicked:
             execute_run(path, scenario, database, pause)
-        elif runs:
-            selected = next(
-                (entry for entry in runs if entry["result"].run_id == st.session_state.get(SELECTED_KEY)),
-                runs[0],
-            )
-            render_run(selected)
+        elif summaries:
+            selected_id = st.session_state.get(SELECTED_KEY, summaries[0].run_id)
+            summary = next(s for s in summaries if s.run_id == selected_id)
+            result = runs.get_run(selected_id)
+            if result is not None:
+                render_run(result, summary, st.session_state[PAUSES_KEY].get(selected_id))
 
 
 main()

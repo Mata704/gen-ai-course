@@ -145,8 +145,160 @@ apenas os dados aprovados; o contexto do lote bloqueado é devolvido em JSON.
 
 ### Ainda por fazer
 
-O histórico de execuções existe apenas na sessão do browser. Os passos dos
-agentes e das tools ainda não aparecem, porque ainda não existem.
+Os passos dos agentes e das tools ainda não aparecem, porque ainda não
+existem. O histórico passou a SQLite no marco seguinte.
+
+## 2026-11-15 — Persistência SQLite, tools, hooks e servidor MCP
+
+### Feito
+
+- **SQLite como fonte de verdade** (`persistence/`): migrações versionadas e
+  repositórios. Cada execução guarda a definição da pipeline (versionada por
+  hash), estado, etapas, eventos ao vivo, lote recebido e transformado,
+  resultado das regras, incidente e, só quando tudo passou, o lote carregado.
+  Uma execução com erro de entrada fica como `failed`. Destinos antigos com
+  `pipeline_output` são aproveitados.
+- `PipelineService` junta o simulador e a persistência; o CLI e a interface
+  usam-no. O histórico da interface passou a vir de SQLite.
+- **Tools de leitura** para os sub-agents, com resultados pequenos e
+  referências de evidência. Nunca revelam o cenário nem os logs que só
+  descrevem a simulação (marcados com `simulation_only` e mostrados na
+  interface com `[simulador]`).
+- **Runbooks** versionados em `src/data_quality_agent/runbooks/`, associados
+  aos tipos de regra, e a tool `find_runbook`.
+- **Catálogo por agente e `ToolGateway`** com hooks antes da tool (allowlist e
+  limite de chamadas) e depois (limite de tamanho e marca de conteúdo não
+  confiável), e auditoria de todas as chamadas em `tool_calls`.
+- **Servidor MCP único** (`data-quality-mcp --agent <nome>`, stdio), que só
+  anuncia as tools do agente e usa o mesmo gateway.
+- `context.incident_brief`: resumo inicial curto para o orquestrador.
+- Adicionada a dependência `fastmcp-slim[server]`.
+
+### Validação
+
+- `uv run --locked --extra dev pytest -q` — 35 testes passaram, incluindo a
+  reconstrução exata de execuções a partir de SQLite, a migração de um destino
+  antigo, a ausência do cenário nos resultados das tools, os bloqueios e a
+  auditoria do gateway, as tools por agente via MCP e o histórico da interface
+  numa nova sessão.
+- Servidor MCP testado por stdio real com o agente `quality`.
+- `uv lock --check` e `uv build` confirmados; os runbooks são incluídos no
+  pacote.
+
+### Ainda por fazer
+
+Agentes PydanticAI, ações e aprovações, hook de fim de execução, revalidação,
+retoma, memória e bloqueio por hash das descrições das tools.
+
+## 2026-11-15 — Duas bases de dados: local e plataforma da origem via MCP
+
+### Feito
+
+- O servidor MCP passou a representar a **plataforma da equipa que produz as
+  encomendas**, um sistema que não controlamos. Tem o seu próprio SQLite
+  (`mcp/data/orders_platform.sqlite3`), já incluído no projeto e gerado a
+  partir de `platform.sql`, que o servidor abre só para leitura (`mode=ro`).
+  Contém o contrato do dataset, alterações de esquema anunciadas, estado e
+  janelas de manutenção da origem, incidentes da equipa de origem e o cadastro
+  de clientes. Os dados dão pistas para os cenários sem revelar a resposta, e
+  um incidente inclui um comentário a pedir para ignorar as verificações, para
+  testar os guardrails.
+- 5 tools MCP: `get_dataset_contract`, `list_schema_changes`,
+  `get_source_status`, `list_upstream_incidents` e `lookup_customers`. O
+  servidor deixou de ter `--agent`: anuncia todas as tools, e o nosso catálogo
+  decide que agente usa cada uma.
+- As 11 tools da base local passaram a ser **locais** (no mesmo processo).
+- O catálogo indica a origem de cada tool (`local` ou `mcp`). O gateway ficou
+  assíncrono e encaminha para a tool local ou para o cliente MCP, com os
+  mesmos hooks e a mesma auditoria.
+- **Fixação das tools MCP** (sessão 03): `tools/mcp_lock.json` guarda o hash
+  do nome, descrição e parâmetros de cada tool revista. Uma tool nova ou
+  alterada é bloqueada pelo hook antes da tool. Novo comando
+  `data-quality-mcp-lock`.
+- Migração 2: `tool_calls.source`; as chamadas MCP ficam associadas à
+  execução investigada.
+- A definição da pipeline indica a origem (`source_system`,
+  `source_dataset`), devolvida pelas tools locais.
+- Só o texto livre da origem (`list_schema_changes`,
+  `list_upstream_incidents`) é marcado como não confiável. `get_run_logs` e
+  `find_runbook` deixaram de ser marcados: os logs são gerados pela nossa
+  pipeline e os runbooks são procedimentos nossos e revistos.
+
+### Validação
+
+- `uv run --locked --extra dev pytest -q` — 39 testes passaram, incluindo as
+  tools MCP através do gateway com auditoria `mcp`, os erros da plataforma, o
+  bloqueio de tools com descrição alterada ou não revista, o lock igual ao
+  servidor, o ficheiro da plataforma igual ao `platform.sql` e a recusa de
+  escritas pelo SQLite.
+- Ligação real por stdio com `data-quality-mcp-lock`: as 5 tools fixadas.
+- `uv build`: o ficheiro da plataforma, o `platform.sql` e o lock são
+  incluídos no pacote.
+
+### Ainda por fazer
+
+Agentes PydanticAI, ações e aprovações (como tools locais), hook de fim de
+execução, revalidação, retoma e memória.
+
+## 2026-11-15 — Destino separado: três bases de dados
+
+### Feito
+
+- Os dados aprovados passaram para um ficheiro próprio, o destino
+  `runs/warehouse.sqlite3` (tabela `pipeline_output`), como um data warehouse
+  separado do sistema que controla a pipeline.
+- A base de controlo `runs/pipelines.sqlite3` fica só com execuções, logs,
+  lotes, findings, incidentes e auditoria. A migração 3 retira dela a tabela
+  `pipeline_output`.
+- Cada execução guarda em `pipeline_runs.destination` o caminho do destino; o
+  histórico, a interface e `get_delivery_status` leem daí os registos
+  entregues, sem criar o ficheiro se ele não existir.
+- Novo argumento `--warehouse` no CLI; por omissão o destino fica ao lado da
+  base de controlo. Um ficheiro de destino antigo continua a funcionar.
+- Bases: destino (dados aprovados), controlo (histórico) e plataforma da
+  origem via MCP (só leitura).
+
+### Validação
+
+- `uv run --locked --extra dev pytest -q` — 41 testes passaram, incluindo os
+  dados aprovados só no destino, a base de controlo sem `pipeline_output`,
+  um ficheiro de destino antigo que mantém os dados e a migração de uma base
+  de controlo antiga.
+- Execução pelo CLI: a base de controlo com o histórico e o destino com os 5
+  registos aprovados.
+
+### Ainda por fazer
+
+Agentes PydanticAI, ações e aprovações (como tools locais), hook de fim de
+execução, revalidação, retoma e memória.
+
+## 2026-11-15 — Regras gerais e regras por pipeline
+
+### Feito
+
+- As regras continuam locais (não vêm do MCP; o MCP tem o contrato da origem).
+- Nova biblioteca de regras gerais `simulator/rules/general.json`, aplicada a
+  todas as pipelines: `expected-schema`, `minimum-volume` e `freshness`. São
+  só regras do lote inteiro, porque as de campos dependem de cada pipeline.
+- A definição da pipeline passa a ter `general_rules` (ajustar limite ou
+  severidade, ou desativar, sempre com motivo) e `rules` (regras próprias).
+  `orders_daily` ajusta o volume mínimo para 4 e a frescura para 60 min.
+- `load_pipeline` junta as regras gerais ajustadas e as próprias; cada regra
+  indica a origem e o motivo do ajuste, e as gerais desativadas ficam
+  registadas. `list_quality_rules` devolve essa informação.
+- Ids renomeados: `schema-v1` → `expected-schema`, `freshness-60m` →
+  `freshness` (o limite deixou de fazer parte do nome).
+
+### Validação
+
+- `uv run --locked --extra dev pytest -q` — 47 testes passaram, incluindo a
+  junção das regras, a desativação com motivo e a recusa de ajustes
+  inválidos.
+
+### Ainda por fazer
+
+Agentes PydanticAI, ações e aprovações (como tools locais), hook de fim de
+execução, revalidação, retoma e memória.
 
 ## Próximos registos
 

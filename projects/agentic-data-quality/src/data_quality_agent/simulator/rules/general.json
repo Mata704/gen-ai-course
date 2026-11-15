@@ -1,0 +1,25 @@
+{
+  "description": "General rules applied to every pipeline. A pipeline may change a threshold or the severity, or disable a rule, always with a reason.",
+  "rules": [
+    {
+      "rule_id": "expected-schema",
+      "name": "Columns match the pipeline schema",
+      "kind": "schema",
+      "severity": "high"
+    },
+    {
+      "rule_id": "minimum-volume",
+      "name": "Minimum record volume",
+      "kind": "min_rows",
+      "severity": "high",
+      "minimum_count": 1
+    },
+    {
+      "rule_id": "freshness",
+      "name": "Source data freshness",
+      "kind": "freshness",
+      "severity": "high",
+      "maximum_delay_minutes": 120
+    }
+  ]
+}

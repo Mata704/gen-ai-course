@@ -4,8 +4,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from data_quality_agent.simulator.destination import DEFAULT_DATABASE
-from data_quality_agent.simulator.engine import PipelineSimulator, SCENARIOS_DIR
+from data_quality_agent.persistence.database import DEFAULT_DATABASE
+from data_quality_agent.service import PipelineService
+from data_quality_agent.simulator.engine import SCENARIOS_DIR
 
 
 def main() -> int:
@@ -24,13 +25,19 @@ def main() -> int:
         "--database",
         type=Path,
         default=DEFAULT_DATABASE,
-        help="SQLite destination for approved data (defaults to runs/pipelines.sqlite3).",
+        help="Control database: run history, logs, findings, incidents (defaults to runs/pipelines.sqlite3).",
+    )
+    parser.add_argument(
+        "--warehouse",
+        type=Path,
+        help="Destination SQLite file for approved data (defaults to warehouse.sqlite3 next to --database).",
     )
     args = parser.parse_args()
 
     scenario_path = Path(args.scenario)
     try:
-        result = PipelineSimulator(database_path=args.database).run(scenario_path, input_path=args.input)
+        service = PipelineService(database_path=args.database, warehouse_path=args.warehouse)
+        result = service.run(scenario_path, input_path=args.input)
     except (OSError, ValueError) as error:
         print(f"Simulation failed: {error}", file=sys.stderr)
         return 2

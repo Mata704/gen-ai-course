@@ -122,9 +122,10 @@ reprocessamento. Depois de uma ação, as etapas afetadas e o mesmo bloco
 determinístico terão de ser executados novamente antes de carregar os dados.
 Um parecer do modelo não substitui esse controlo.
 
-Nesta fase, apenas a ingestão, transformação, gate e destino estão
-implementados. Os agentes, as ações, a retoma e a persistência dos incidentes
-continuam previstos para fases seguintes. Não há reparação automática fictícia.
+Nesta fase estão implementados a ingestão, transformação, gate e destino, a
+persistência de cada execução e do seu incidente, as tools de consulta locais
+e o servidor MCP da plataforma da origem. Os agentes, as ações e a retoma continuam previstos para
+fases seguintes. Não há reparação automática fictícia.
 
 ## 6. Arquitetura proposta
 
@@ -143,9 +144,9 @@ flowchart TB
     PD --> G
     REM --> G
     REV --> G
-    G --> TOOLS[Tools de pipeline, qualidade, runbook, incidente e ação]
-    G --> MCP[MCP local: catálogo aprovado e escopos]
-    MCP --> TOOLS
+    G --> TOOLS[Tools locais de pipeline, qualidade, runbook, incidente e ação]
+    G --> MCP[MCP: plataforma da origem, tools fixadas por hash]
+    MCP --> EXT[(SQLite da plataforma, só leitura)]
     TOOLS --> SIM
     TOOLS --> DB[(SQLite e repositórios)]
     WF --> DB
@@ -166,12 +167,14 @@ flowchart TB
 | Tools e serviços de domínio | Implementam consultas, regras de Data Quality, runbooks e ações; devolvem resultados tipados e rastreáveis. |
 | Simulador | Produz dados sintéticos, execuções, falhas, métricas e efeitos observáveis de ações. |
 | Persistência | SQLite, acessível através de repositórios; transações para estado de workflow, auditoria, aprovação e ação. |
-| MCP local | Expõe uma seleção versionada de ferramentas locais. Acesso do agente passa pelo mesmo gateway e pelas mesmas políticas das chamadas Python. |
+| MCP | Servidor da plataforma da origem: sistema externo só de leitura, com a sua própria base de dados. As tools MCP são fixadas por hash e passam pelo mesmo gateway e pelas mesmas políticas das tools locais. |
 | Harness de avaliação | Executa casos determinísticos, recolhe trajetórias e compara efeitos e resultados com expectativas. |
 
 ### Organização de código pretendida
 
-Esta é uma estrutura-alvo, não uma implementação imediata:
+Esta é uma estrutura-alvo. Já existem `simulator/`, `persistence/`, `tools/`,
+`mcp/`, `runbooks/` (dentro do pacote, para ser distribuído com ele), `ui/`,
+`service.py` e `context.py`:
 
 ```text
 projects/agentic-data-quality/
@@ -185,7 +188,7 @@ projects/agentic-data-quality/
 │   ├── services/           # casos de uso e regras de negócio
 │   ├── agents/             # orquestrador e especialistas PydanticAI
 │   ├── tools/              # interfaces e ferramentas permitidas
-│   ├── mcp/                # servidor local e catálogo MCP
+│   ├── mcp/                # servidor MCP e dados da plataforma da origem (só leitura)
 │   ├── simulator/          # pipelines, dados sintéticos e cenários
 │   ├── persistence/        # SQLite, repositórios e migrações
 │   ├── workflows/          # executor, estados e recuperação
@@ -233,7 +236,7 @@ sequenceDiagram
     participant D as Sub-agent de diagnóstico
     participant RM as Sub-agent de remediação
     participant H as Hooks e Tool Gateway
-    participant T as Tools Python / MCP local
+    participant T as Tools locais / MCP da origem
     participant A as Serviço de autorização / aprovação
     participant V as Sub-agent revisor
     participant DB as SQLite
@@ -340,8 +343,9 @@ verificado não é.
   aprovar a si próprio.
 - Aprovações são específicas a ação e alvo, expiram ou são invalidadas segundo
   política explícita e ficam auditadas com autor, decisão e instante.
-- Runbooks são conteúdo não confiável: orientam a análise, mas não substituem
-  verificação nem política. Ações extraídas de um runbook continuam sujeitas a
+- Runbooks são procedimentos nossos, versionados e revistos: orientam a
+  análise, mas não substituem verificação nem política. O texto livre vindo
+  da plataforma da origem é conteúdo não confiável. Ações extraídas de um runbook continuam sujeitas a
   autorização.
 - Dados e logs apresentados ao modelo serão mínimos e filtrados. O MVP usa
   dados sintéticos; segredos nunca são gravados em logs, base de dados ou
@@ -349,6 +353,31 @@ verificado não é.
 - O servidor MCP corre localmente, preferencialmente por transporte stdio. Não
   haverá endpoint remoto na primeira versão. A UI, o MCP e SQLite partilham a
   mesma política de acesso.
+
+**Implementado:** duas origens de tools com duas bases de dados separadas.
+
+- **Tools locais** (`tools/data_tools.py`), no mesmo processo, sobre a base
+  local: execuções, logs, regras, registos, incidentes e runbooks.
+- **Servidor MCP `orders-platform`** (`data-quality-mcp`, FastMCP, stdio):
+  representa a plataforma da equipa que produz os dados, um sistema que não
+  controlamos. Tem o seu próprio SQLite já preenchido
+  (`mcp/data/orders_platform.sqlite3`, gerado de `platform.sql`), aberto em
+  `mode=ro`, com contrato do dataset, alterações de esquema, estado da origem,
+  incidentes da origem e cadastro de clientes. Não conhece os nossos agentes e
+  anuncia todas as suas tools.
+
+O catálogo (`tools/catalog.py`) é nosso: indica a origem de cada tool e que
+agente a pode usar. O cliente MCP (`tools/platform_client.py`) fixa cada tool
+pelo hash do nome, descrição e esquema de parâmetros (`tools/mcp_lock.json`,
+sessão 03); uma tool nova ou alterada fica bloqueada até ser revista com
+`data-quality-mcp-lock --update-lock`. Tools locais e MCP passam pelo mesmo
+`ToolGateway`, com hooks antes (allowlist, limite de chamadas e tool fixada) e
+depois (limite de tamanho e marca de conteúdo não confiável para o texto
+livre da origem: alterações de esquema e incidentes da origem), e todas ficam
+auditadas em `tool_calls` da base local, com a origem. As tools são só de
+leitura, e as locais nunca revelam o cenário nem os logs que só descrevem a
+simulação. Ficam por fazer: ações (serão tools locais, porque a plataforma é
+só de consulta), autorização e aprovações e o hook de fim de execução.
 
 ## 11. Persistência e memória
 
@@ -372,6 +401,18 @@ apresentados como factos atuais. Escrita, correção, esquecimento e proposta de
 runbook seguem políticas explícitas; procedimento operacional só é publicado
 após revisão humana.
 
+**Implementado (migrações 1 a 3), na base de controlo:** `pipelines` (versionada por hash da definição),
+`pipeline_runs` (com o caminho do destino de cada execução), `run_stages`,
+`run_events` (gravados ao vivo, modo WAL), `run_records`, `quality_findings`,
+`incidents` e `tool_calls` (auditoria das tools, com a origem `local` ou
+`mcp`, acrescentada na migração 2). Os
+workflows, ações, aprovações e memórias serão acrescentados em novas
+migrações com os agentes. Os runbooks são ficheiros versionados, não linhas da
+base de dados. Há mais dois ficheiros fora destas migrações: o destino
+(`runs/warehouse.sqlite3`, tabela `pipeline_output` com os dados aprovados,
+retirada da base de controlo na migração 3) e a plataforma da origem, só de
+leitura (ver secção 10).
+
 ## 12. Interface Streamlit
 
 Âmbito decidido: a interface serve apenas para **iniciar o processo, escolher
@@ -384,11 +425,11 @@ Implementado (módulo `src/data_quality_agent/ui/`):
 - seleção de cenário, destino SQLite e botão de execução;
 - acompanhamento ao vivo através dos eventos publicados pelo motor
   (`stage_started`, `stage_finished` e `log`);
-- lista das execuções da sessão, métricas do lote, regras falhadas, incidente
-  e dados recebidos, transformados e carregados.
+- histórico das execuções lido de SQLite, métricas do lote, regras falhadas,
+  incidente e dados recebidos, transformados e carregados.
 
 Previsto, quando existirem: passos e logs dos agentes e das tools dentro da
-etapa de intervenção, e histórico lido de SQLite em vez da sessão do browser.
+etapa de intervenção.
 Como a interface não inclui aprovações, o canal para a aprovação humana fica em
 aberto.
 
@@ -401,7 +442,7 @@ autorização, coordenação de agentes ou regras de Data Quality.
 |---|---|
 | 01 — Agent Harness e PydanticAI | Contratos de saída, ferramentas concretas e verificador que impede resolução sem evidência de recuperação. |
 | 02 — Context, Tools, Skills | Seleção de contexto relevante, catálogo de ferramentas limitado, runbooks como procedimentos e ações idempotentes. |
-| 03 — Integração MCP | Servidor MCP local, catálogo aprovado, scopes, controlo de chamadas e correlação de fontes de incidente. |
+| 03 — Integração MCP | Servidor MCP externo só de leitura, catálogo aprovado, fixação por hash, scopes, controlo de chamadas e correlação de fontes de incidente. |
 | 04 — Memória | Política de escrita e recall, origem, confiança, validade, conflitos, correção, esquecimento e isolamento por equipa/pipeline. |
 | 05 — Segurança | Autorização em código, identidade do utilizador, menor privilégio, aprovação humana e evidência para resistir a instruções maliciosas nos dados. |
 | 06 — Avaliação | Casos acumulados e reservados, comparação entre versões, verificação de trajetória, critérios de adoção e prevenção de regressões. |
@@ -451,7 +492,7 @@ versionados. A avaliação irá observar tanto o resultado como a trajetória:
 7. Mitigação simulada permitida, com resultado confirmado.
 8. Ação que exige aprovação: rejeição e aprovação em execuções distintas.
 9. Timeout após efeito, com consulta do estado e retoma sem duplicação.
-10. Runbook ou log contendo instrução indevida, sem contornar as políticas.
+10. Texto da plataforma da origem contendo instrução indevida, sem contornar as políticas.
 11. Memória expirada, conflitante ou de outra equipa.
 12. Output inválido e ferramenta indisponível, sem conclusão falsa.
 
@@ -473,8 +514,8 @@ quando aplicável.
    orquestrador; testar contratos e coordenação com doubles locais.
 5. **Segurança e recuperação:** autorização, aprovação, auditoria, checkpoints,
    falhas injetadas e retoma.
-6. **MCP local e memória:** servidor MCP integrado ao mesmo gateway, catálogo,
-   políticas e políticas de memória.
+6. **MCP e memória:** servidor MCP da plataforma da origem integrado ao mesmo
+   gateway, catálogo, fixação por hash e políticas de memória.
 7. **Streamlit e avaliação ponta a ponta:** observabilidade, fluxo de
    aprovação, histórico, cenários completos e documentação de execução.
 

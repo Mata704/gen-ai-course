@@ -157,7 +157,8 @@ def run_metrics(result: PipelineRun) -> RunMetrics:
 
 def format_log_line(event: PipelineEvent) -> str:
     time = event.timestamp.astimezone().strftime("%H:%M:%S.%f")[:-3]
-    return f"{time}  {event.level.value.upper():<7}  {event.message}"
+    marker = "[simulador] " if event.simulation_only else ""
+    return f"{time}  {event.level.value.upper():<7}  {marker}{event.message}"
 
 
 def format_duration(seconds: float | None) -> str:

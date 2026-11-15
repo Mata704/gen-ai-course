@@ -7,3 +7,5 @@ __pycache__/
 *.sqlite
 *.sqlite3
 *.db
+# The external platform snapshot is part of the project (read-only data for the MCP server).
+!src/data_quality_agent/mcp/data/orders_platform.sqlite3

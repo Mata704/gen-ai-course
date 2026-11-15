@@ -110,14 +110,55 @@ class QualityRule(StrictModel):
     reference_values: list[str] = Field(default_factory=list)
     minimum_count: int | None = Field(default=None, ge=0)
     maximum_delay_minutes: int | None = Field(default=None, ge=0)
+    # Filled when a pipeline is resolved: a general rule shared by every pipeline, or its own rule.
+    origin: Literal["general", "pipeline"] = "pipeline"
+    # Why this pipeline changed a general rule.
+    adjustment_reason: str | None = None
 
 
-class PipelineDefinition(StrictModel):
+class GeneralRuleLibrary(StrictModel):
+    """Rules every pipeline gets by default (rules/general.json)."""
+
+    description: str
+    rules: list[QualityRule]
+
+
+class GeneralRuleAdjustment(StrictModel):
+    """How one pipeline changes a general rule; the reason is mandatory and kept with the rule."""
+
+    reason: str = Field(min_length=1)
+    enabled: bool = True
+    severity: Severity | None = None
+    minimum_count: int | None = Field(default=None, ge=0)
+    maximum_delay_minutes: int | None = Field(default=None, ge=0)
+
+
+class PipelineConfig(StrictModel):
+    """A pipeline definition file: adjustments to the general rules plus the pipeline's own rules."""
+
     pipeline_id: str = Field(min_length=1)
     name: str
     dataset_file: str
+    # Where the data comes from in the producers' platform (served by the MCP server).
+    source_system: str | None = None
+    source_dataset: str | None = None
+    expected_columns: list[str]
+    general_rules: dict[str, GeneralRuleAdjustment] = Field(default_factory=dict)
+    rules: list[QualityRule] = Field(default_factory=list)
+
+
+class PipelineDefinition(StrictModel):
+    """A pipeline with its effective rules (general ones already adjusted), as stored with each run."""
+
+    pipeline_id: str = Field(min_length=1)
+    name: str
+    dataset_file: str
+    source_system: str | None = None
+    source_dataset: str | None = None
     expected_columns: list[str]
     rules: list[QualityRule]
+    # General rules this pipeline switched off, with the reason.
+    disabled_general_rules: dict[str, str] = Field(default_factory=dict)
 
 
 class QualityFinding(StrictModel):
@@ -145,6 +186,8 @@ class PipelineEvent(StrictModel):
     status: StageStatus | None = None
     level: LogLevel = LogLevel.INFO
     message: str
+    # Simulator bookkeeping (scenario and injected faults): shown to people, never to agents.
+    simulation_only: bool = False
 
 
 class PipelineIncident(StrictModel):

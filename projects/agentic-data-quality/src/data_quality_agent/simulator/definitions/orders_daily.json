@@ -2,14 +2,21 @@
   "pipeline_id": "orders_daily",
   "name": "Daily orders quality pipeline",
   "dataset_file": "orders.json",
+  "source_system": "orders-export-api",
+  "source_dataset": "sales.orders",
   "expected_columns": ["order_id", "customer_id", "amount", "status"],
-  "rules": [
-    {
-      "rule_id": "schema-v1",
-      "name": "Expected order schema",
-      "kind": "schema",
-      "severity": "high"
+  "general_rules": {
+    "minimum-volume": {
+      "minimum_count": 4,
+      "severity": "medium",
+      "reason": "A normal day has at least 4 orders; fewer usually means a partial export."
     },
+    "freshness": {
+      "maximum_delay_minutes": 60,
+      "reason": "Orders feed the morning report; the source promises data within 60 minutes."
+    }
+  },
+  "rules": [
     {
       "rule_id": "required-customer",
       "name": "Customer is required",
@@ -48,20 +55,6 @@
       "severity": "high",
       "field": "customer_id",
       "reference_values": ["C-101", "C-102", "C-103", "C-104"]
-    },
-    {
-      "rule_id": "minimum-volume",
-      "name": "Minimum daily record volume",
-      "kind": "min_rows",
-      "severity": "medium",
-      "minimum_count": 4
-    },
-    {
-      "rule_id": "freshness-60m",
-      "name": "Source data freshness",
-      "kind": "freshness",
-      "severity": "high",
-      "maximum_delay_minutes": 60
     }
   ]
 }

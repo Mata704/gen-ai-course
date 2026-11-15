@@ -11,7 +11,9 @@ from data_quality_agent.simulator.destination import SQLiteDestination
 from data_quality_agent.simulator.engine import DATASETS_DIR, PipelineSimulator, SCENARIOS_DIR, load_pipeline
 from data_quality_agent.simulator.models import (
     EventKind,
+    GeneralRuleAdjustment,
     LogLevel,
+    PipelineConfig,
     PipelineEvent,
     PipelineStatus,
     QualityStatus,
@@ -19,11 +21,12 @@ from data_quality_agent.simulator.models import (
     StageStatus,
 )
 from data_quality_agent.simulator.quality import check_quality
+from data_quality_agent.simulator.rule_library import load_general_rules, resolve_pipeline
 
 
 @pytest.fixture
 def simulator(tmp_path: Path) -> PipelineSimulator:
-    return PipelineSimulator(database_path=tmp_path / "output.sqlite3")
+    return PipelineSimulator(warehouse_path=tmp_path / "output.sqlite3")
 
 
 @pytest.fixture
@@ -89,8 +92,8 @@ def test_schema_drift_and_late_low_volume_are_detected(simulator: PipelineSimula
     schema_result = simulator.run(SCENARIOS_DIR / "schema_drift.json")
     late_result = simulator.run(SCENARIOS_DIR / "late_and_low_volume.json")
 
-    assert "schema-v1" in {finding.rule_id for finding in schema_result.findings}
-    assert {"minimum-volume", "freshness-60m"} <= {
+    assert "expected-schema" in {finding.rule_id for finding in schema_result.findings}
+    assert {"minimum-volume", "freshness"} <= {
         finding.rule_id for finding in late_result.findings
     }
     assert late_result.record_count == 2
@@ -150,7 +153,7 @@ def test_missing_column_in_one_local_record_blocks_delivery(
 
     assert result.pipeline_status == PipelineStatus.BLOCKED
     assert result.output_records == []
-    assert {finding.rule_id for finding in result.findings} == {"schema-v1"}
+    assert {finding.rule_id for finding in result.findings} == {"expected-schema"}
     assert result.findings[0].row_indexes == [1]
 
 
@@ -267,7 +270,7 @@ def test_blocked_batch_does_not_change_previous_destination_data(simulator: Pipe
 
 
 def test_delivery_failure_is_not_reported_as_success(tmp_path: Path) -> None:
-    simulator = PipelineSimulator(database_path=tmp_path)
+    simulator = PipelineSimulator(warehouse_path=tmp_path)
 
     result = simulator.run(SCENARIOS_DIR / "healthy.json")
 
@@ -350,3 +353,54 @@ def test_unexpected_input_error_closes_the_run_as_failed(
     assert all(status == StageStatus.SKIPPED for stage, status in finished.items()
                if stage != StageName.INGESTION)
     assert any(event.level == LogLevel.ERROR for event in seen)
+
+def test_pipeline_gets_the_general_rules_with_its_own_adjustments_and_rules() -> None:
+    pipeline = load_pipeline("orders_daily")
+    rules = {rule.rule_id: rule for rule in pipeline.rules}
+
+    assert [rule.rule_id for rule in pipeline.rules if rule.origin == "general"] == [
+        "expected-schema", "minimum-volume", "freshness",
+    ]
+    assert rules["expected-schema"].adjustment_reason is None
+    assert rules["freshness"].maximum_delay_minutes == 60
+    assert rules["freshness"].adjustment_reason
+    assert (rules["minimum-volume"].minimum_count, rules["minimum-volume"].severity.value) == (4, "medium")
+    assert rules["valid-status"].origin == "pipeline"
+
+
+def _config(**general_rules: GeneralRuleAdjustment) -> PipelineConfig:
+    return PipelineConfig(
+        pipeline_id="p", name="p", dataset_file="d.json", expected_columns=["id"],
+        general_rules=general_rules,
+    )
+
+
+def test_a_pipeline_can_switch_off_a_general_rule_with_a_reason() -> None:
+    pipeline = resolve_pipeline(
+        _config(freshness=GeneralRuleAdjustment(enabled=False, reason="Monthly backfill; no SLA.")),
+        load_general_rules(),
+    )
+
+    assert "freshness" not in {rule.rule_id for rule in pipeline.rules}
+    assert pipeline.disabled_general_rules == {"freshness": "Monthly backfill; no SLA."}
+
+
+@pytest.mark.parametrize(
+    ("config", "error"),
+    [
+        (_config(unknown=GeneralRuleAdjustment(reason="x", minimum_count=1)), "unknown general rules"),
+        (_config(freshness=GeneralRuleAdjustment(reason="x", minimum_count=3)), "has no 'minimum_count'"),
+        (_config(freshness=GeneralRuleAdjustment(reason="x")), "changes nothing"),
+        (
+            PipelineConfig.model_validate({
+                "pipeline_id": "p", "name": "p", "dataset_file": "d.json", "expected_columns": ["id"],
+                "rules": [{"rule_id": "freshness", "name": "mine", "kind": "freshness",
+                           "severity": "low", "maximum_delay_minutes": 5}],
+            }),
+            "adjust them instead",
+        ),
+    ],
+)
+def test_invalid_adjustments_of_general_rules_are_rejected(config: PipelineConfig, error: str) -> None:
+    with pytest.raises(ValueError, match=error):
+        resolve_pipeline(config, load_general_rules())
