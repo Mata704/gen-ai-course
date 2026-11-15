@@ -300,6 +300,22 @@ execução, revalidação, retoma e memória.
 Agentes PydanticAI, ações e aprovações (como tools locais), hook de fim de
 execução, revalidação, retoma e memória.
 
+## 2026-11-15 — Organização dos módulos
+
+### Feito
+
+- Separados do motor do simulador o registo de eventos e a preparação de dados
+  e falhas dos cenários.
+- Separados do repositório de execuções a auditoria de tools e os modelos
+  devolvidos pela persistência, mantendo os imports anteriores disponíveis.
+- Separada a apresentação Streamlit da ligação entre interface e serviço.
+- Documentada a organização no README, sem alterar o fluxo da pipeline.
+
+### Validação
+
+- `uv run --locked --extra dev pytest -q -p no:cacheprovider` — 47 testes
+  passaram, incluindo a interface, persistência, simulador e MCP.
+
 ## Próximos registos
 
 Adicionar uma nova secção datada quando um marco for concluído. Atualizar este

@@ -14,7 +14,8 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from data_quality_agent.persistence.repository import RunRepository, RunSummary
+from data_quality_agent.persistence.models import RunSummary
+from data_quality_agent.persistence.repository import RunRepository
 from data_quality_agent.simulator.models import EventKind, LogLevel, PipelineDefinition, StageName
 from data_quality_agent.tools.runbooks import RunbookLibrary
 

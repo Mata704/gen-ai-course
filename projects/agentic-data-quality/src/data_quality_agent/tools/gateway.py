@@ -17,7 +17,7 @@ from typing import Any
 
 from pydantic import ValidationError, validate_call
 
-from data_quality_agent.persistence.repository import AuditRepository
+from data_quality_agent.persistence.audit import AuditRepository
 from data_quality_agent.tools.catalog import AGENTS, CATALOG, ToolSpec
 from data_quality_agent.tools.data_tools import DataQualityTools, ToolInputError
 from data_quality_agent.tools.platform_client import PlatformClient, RemoteToolError

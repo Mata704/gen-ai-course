@@ -17,6 +17,18 @@ uv sync --locked --extra dev
 O projeto tem um `pyproject.toml` e `uv.lock` próprios. Não importa o pacote
 principal do repositório nem o domínio da bolsa do Meridian.
 
+## Organização do código
+
+- `simulator/engine.py` coordena a execução; `input_data.py` trata os lotes
+  e as falhas simuladas, e `events.py` regista o progresso das etapas.
+- `persistence/repository.py` gere o histórico das execuções;
+  `persistence/audit.py` gere a auditoria de tools e `models.py` os modelos
+  devolvidos pelos repositórios.
+- `tools/` contém as tools locais, o cliente MCP e o gateway; `mcp/` contém
+  o servidor e a plataforma de origem simulada.
+- `ui/app.py` liga a interface ao serviço; `ui/components.py` apresenta os
+  resultados e `ui/view_model.py` prepara os estados e métricas.
+
 ## Executar o simulador
 
 ```powershell

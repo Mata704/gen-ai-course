@@ -1,4 +1,4 @@
-"""Typed, parameterized access to the run history, incidents and tool-call audit."""
+"""Typed, parameterized access to run history and incidents."""
 
 from __future__ import annotations
 
@@ -6,11 +6,17 @@ import hashlib
 import json
 import sqlite3
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import BaseModel
-
+from data_quality_agent.persistence.audit import AuditRepository as AuditRepository
 from data_quality_agent.persistence.database import Database
+from data_quality_agent.persistence.models import (
+    RecordStep as RecordStep,
+    RunState as RunState,
+    RunSummary as RunSummary,
+    StoredIncident as StoredIncident,
+    ToolCall as ToolCall,
+)
 from data_quality_agent.simulator.destination import SQLiteDestination
 from data_quality_agent.simulator.models import (
     EventKind,
@@ -27,42 +33,6 @@ from data_quality_agent.simulator.models import (
     StageResult,
     StageStatus,
 )
-
-RunState = Literal["running", "succeeded", "blocked", "failed"]
-RecordStep = Literal["ingested", "transformed"]
-
-
-class RunSummary(BaseModel):
-    run_id: str
-    pipeline_id: str
-    pipeline_version: str
-    scenario_id: str
-    status: RunState
-    quality_status: QualityStatus
-    record_count: int
-    delay_minutes: int
-    observed_columns: list[str]
-    errors: list[str]
-    started_at: datetime
-    finished_at: datetime | None
-
-
-class StoredIncident(PipelineIncident):
-    opened_at: datetime
-
-
-class ToolCall(BaseModel):
-    call_id: int
-    called_at: datetime
-    agent: str
-    tool: str
-    source: Literal["local", "mcp"] | None
-    arguments: dict[str, Any]
-    run_id: str | None
-    outcome: Literal["ok", "error", "blocked"]
-    detail: str
-    duration_ms: int
-
 
 def definition_version(definition: PipelineDefinition) -> str:
     """Content hash, so each run points at the exact rules it was checked against."""
@@ -391,54 +361,3 @@ class RunRepository:
             started_at=datetime.fromisoformat(row["started_at"]),
             finished_at=datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None,
         )
-
-
-class AuditRepository:
-    """Append-only record of every tool call, whatever its outcome."""
-
-    def __init__(self, database: Database) -> None:
-        self.database = database
-
-    def record(
-        self,
-        *,
-        agent: str,
-        tool: str,
-        source: Literal["local", "mcp"] | None,
-        arguments: dict[str, Any],
-        run_id: str | None,
-        outcome: Literal["ok", "error", "blocked"],
-        detail: str,
-        duration_ms: int,
-    ) -> None:
-        with self.database.transaction() as connection:
-            connection.execute(
-                "INSERT INTO tool_calls (called_at, agent, tool, source, arguments_json, run_id, outcome, "
-                "detail, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    _now(), agent, tool, source, json.dumps(arguments, default=str),
-                    run_id, outcome, detail, duration_ms,
-                ),
-            )
-
-    def list_calls(self, *, run_id: str | None = None, limit: int = 100) -> list[ToolCall]:
-        query, params = "SELECT * FROM tool_calls", ()
-        if run_id is not None:
-            query, params = query + " WHERE run_id = ?", (run_id,)
-        with self.database.transaction() as connection:
-            rows = connection.execute(query + " ORDER BY call_id LIMIT ?", (*params, limit)).fetchall()
-        return [
-            ToolCall(
-                call_id=row["call_id"],
-                called_at=datetime.fromisoformat(row["called_at"]),
-                agent=row["agent"],
-                tool=row["tool"],
-                source=row["source"],
-                arguments=json.loads(row["arguments_json"]),
-                run_id=row["run_id"],
-                outcome=row["outcome"],
-                detail=row["detail"],
-                duration_ms=row["duration_ms"],
-            )
-            for row in rows
-        ]
