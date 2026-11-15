@@ -51,7 +51,7 @@ CATALOG: dict[str, ToolSpec] = {
         # Local: our pipeline history.
         _local("list_quality_rules", "quality"),
         _local("get_quality_findings", "quality", "reviewer"),
-        _local("get_affected_records", "quality"),
+        _local("get_affected_records", "quality", untrusted_output=True),
         _local("get_batch_profile", "quality"),
         _local("get_run_summary", "diagnosis", "reviewer"),
         _local("get_run_logs", "diagnosis"),

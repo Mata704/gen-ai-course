@@ -26,6 +26,10 @@ principal do repositório nem o domínio da bolsa do Meridian.
   devolvidos pelos repositórios.
 - `tools/` contém as tools locais, o cliente MCP e o gateway; `mcp/` contém
   o servidor e a plataforma de origem simulada.
+- `agents/` contém os contratos Pydantic, as instruções, a integração das
+  tools e a equipa coordenada pelo orquestrador.
+- `persistence/incidents.py` associa tentativas ao mesmo incidente e guarda
+  as investigações dos agentes.
 - `ui/app.py` liga a interface ao serviço; `ui/components.py` apresenta os
   resultados e `ui/view_model.py` prepara os estados e métricas.
 
@@ -63,8 +67,8 @@ Usa apenas dados fictícios nesta fase.
    intervalos, valores permitidos, referências, volume e atraso (ver
    "Regras de qualidade" abaixo).
 4. **Intervenção dos agentes:** se houver problemas, bloquear a entrega e
-   emitir um incidente `pending_analysis`. A etapa fica `pending`; ainda não
-   executa agentes nem ações corretivas.
+   emitir um incidente. Com agentes ativados, o serviço investiga o contexto
+   persistido; sem agentes, aguarda uma investigação ou um lote corrigido.
 5. **Revalidação:** ponto reservado para voltar a executar o mesmo bloco de
    qualidade após uma futura ação autorizada; por enquanto fica `skipped`.
 6. **Carregamento:** apenas se o Data Quality passar, gravar na tabela
@@ -105,11 +109,11 @@ pertencem à regra ou regras próprias com o id de uma regra geral dão erro.
 - `pipeline_status`: `succeeded` apenas após carregamento confirmado,
   `blocked` quando falha a qualidade, ou `failed` para falhas de execução.
 - `quality_status`: `pass`, `fail` ou `not_run`.
-- `stages`: estado de cada etapa, incluindo o ponto de intervenção futuro.
+- `stages`: estado de cada etapa, incluindo a intervenção dos agentes.
 - `input_records`: lote recebido, incluindo falhas simuladas.
 - `records`: lote após transformação, com as evidências dos problemas.
 - `output_records`: registos efetivamente carregados e verificados.
-- `incident`: motivo e referências para futura análise pelos agentes.
+- `incident`: retrato do incidente detetado nessa tentativa.
 - `events`: eventos de progresso e logs por etapa, pela ordem em que ocorreram.
 
 Um lote bloqueado não é enviado para SQLite, não apaga lotes anteriores e não
@@ -120,10 +124,71 @@ explícito, sem recorrer aos dados de demonstração.
 
 O CLI devolve código 0 quando conclui a simulação, mesmo que o cenário resulte
 em bloqueio ou falha. Consulta `pipeline_status` no JSON. Código 2 indica erro
-de argumentos ou entrada inválida.
+de argumentos, entrada/configuração inválida ou falha da investigação dos agentes.
 
-**Ainda por implementar:** agentes PydanticAI, ações corretivas, aprovações,
-revalidação após ações, retoma e memória.
+**Ainda por implementar:** ações autónomas controladas, autorização e
+aprovações humanas, retoma após interrupção e memória. A correção manual já
+reexecuta o gate numa nova tentativa; a etapa específica de revalidação após
+uma ação autónoma continua reservada.
+
+## Agentes PydanticAI
+
+Os agentes usam a mesma configuração OpenAI do curso: `OPENAI_API_KEY` e
+`OPENAI_MODEL` no ambiente ou num `.env` local (o do projeto ou o do
+repositório). O modelo predefinido é `gpt-4.1-mini`. Nunca coloques uma chave
+nos ficheiros versionados.
+
+```powershell
+uv run --locked data-quality-sim --agents --scenario .\src\data_quality_agent\simulator\scenarios\quality_issues.json
+```
+
+No Streamlit, ativa **Investigar incidentes com agentes (OpenAI)** antes de
+executar, ou usa **Investigar com agentes** num incidente existente. A opção
+está desligada por omissão para continuar a permitir simulações sem API.
+As chamadas enviam ao OpenAI o contexto e os dados selecionados pelas tools;
+usa apenas os dados sintéticos do projeto. Não se efetuam chamadas reais nos
+testes.
+
+- O **orquestrador** só tem tools de delegação. Decide quem consultar e pode
+  pedir investigações independentes em paralelo.
+- **Qualidade** e **diagnóstico** investigam com as respetivas tools.
+- **Remediação** recomenda o próximo passo; não altera dados nem regras.
+- O **revisor** consulta a qualidade e a entrega da tentativa corrigida.
+- As tools MCP chegam ao modelo com a descrição em texto e o esquema de
+  parâmetros aprovados pelo lock, não com a hash. A execução continua a
+  passar pelo gateway.
+
+Os outputs são modelos Pydantic. Referências inventadas são rejeitadas;
+`resolved` exige revisão independente e qualidade/carregamento confirmados
+em código. Há limites de chamadas, delegações, pedidos ao modelo e tempo.
+Falhas ficam explícitas na investigação guardada, sem se converterem em
+sucesso. O relatório completo e os passos dos agentes são guardados na base
+de controlo e apresentados no frontend.
+
+## Corrigir um lote no mesmo incidente
+
+1. Seleciona uma execução com incidente no histórico.
+2. Na secção **Submeter correção para este incidente**, cola a lista JSON
+   corrigida ou carrega um ficheiro JSON (máximo 1 MB), e indica o motivo.
+3. Clica em **Validar e reprocessar correção**.
+
+A nova tentativa mantém o mesmo identificador de incidente, mas recebe um
+`run_id` próprio. Preserva as tentativas anteriores, utiliza a versão
+original das regras e o destino, mantém a ordem recebida e não volta a injetar as falhas
+sintéticas do cenário. O atraso sintético também não se repete: esta é uma
+nova receção de dados.
+
+O lote passa novamente pela ingestão, transformação e pelo mesmo gate
+determinístico. Se falhar, o incidente mantém-se aberto e pode receber outra
+correção. Se passar, é carregado e verificado por leitura. Com agentes
+ativados, o revisor verifica esse resultado antes de o orquestrador resolver
+o incidente; sem agentes, o serviço usa a confirmação determinística.
+
+Um lote já carregado não pode ser novamente entregue como correção. Se a
+investigação falhar após a entrega, usa **Investigar com agentes** para repetir
+apenas a verificação. Correções simultâneas ou baseadas numa tentativa
+desatualizada são recusadas. Não existe, ainda, recuperação automática de um
+processo interrompido.
 
 ## Três bases de dados
 
@@ -158,6 +223,8 @@ esquema é criado e atualizado por migrações versionadas
 | `quality_findings` | Resultado de cada regra do bloco de Data Quality. |
 | `incidents` | Contexto do bloqueio ou da falha, para os agentes. |
 | `tool_calls` | Auditoria de todas as chamadas de tools (locais e MCP): agente, origem, argumentos e resultado. |
+| `incident_workflows`, `incident_attempts` | Incidente estável, tentativa atual e motivo de cada correção. |
+| `agent_sessions`, `agent_steps` | Resultado ou erro de cada investigação e passos dos agentes. |
 
 Uma execução interrompida por um erro de entrada fica registada como
 `failed`. As escritas usam transações, e o modo WAL deixa a interface ler
@@ -214,11 +281,13 @@ Todas as chamadas, locais ou MCP, passam pelo mesmo `ToolGateway`
   abaixo); caso contrário, a chamada é bloqueada.
 - **Hook depois da tool:** limita o tamanho do resultado e marca o texto livre
   escrito pela equipa da origem (alterações de esquema e incidentes da
-  origem) para ser tratado como dados, nunca como instruções. Os logs são
+  origem), bem como os valores dos registos afetados, para ser tratado como
+  dados, nunca como instruções. Os logs são
   gerados pela nossa pipeline e os runbooks são procedimentos nossos e
   revistos, por isso não são marcados.
 - Cada chamada, incluindo as bloqueadas ou inválidas, fica em `tool_calls` da
-  base local, com a origem (`local` ou `mcp`).
+  base local, com a origem (`local` ou `mcp`). Resultados válidos incluem
+  `tool_ref`, que os agentes podem citar.
 
 Os **runbooks** (`src/data_quality_agent/runbooks/*.md`) são os procedimentos
 versionados que a tool local `find_runbook` associa às regras falhadas.

@@ -112,6 +112,42 @@ MIGRATIONS: list[str] = [
     """
     DROP TABLE IF EXISTS pipeline_output;
     """,
+    # 4: stable incidents, correction attempts and agent investigation history.
+    """
+    CREATE TABLE incident_workflows (
+        incident_id TEXT PRIMARY KEY REFERENCES pipeline_runs (run_id),
+        latest_run_id TEXT NOT NULL REFERENCES pipeline_runs (run_id),
+        status TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE incident_attempts (
+        run_id TEXT PRIMARY KEY REFERENCES pipeline_runs (run_id),
+        incident_id TEXT NOT NULL REFERENCES incident_workflows (incident_id),
+        correction_reason TEXT
+    );
+    INSERT INTO incident_workflows
+        SELECT run_id, run_id, 'awaiting_correction', opened_at FROM incidents;
+    INSERT INTO incident_attempts
+        SELECT run_id, run_id, NULL FROM incidents;
+    CREATE TABLE agent_sessions (
+        session_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES pipeline_runs (run_id),
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        outcome_json TEXT,
+        error TEXT
+    );
+    CREATE UNIQUE INDEX one_active_agent_session ON agent_sessions (run_id) WHERE status = 'running';
+    CREATE TABLE agent_steps (
+        step_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL REFERENCES agent_sessions (session_id),
+        timestamp TEXT NOT NULL,
+        agent TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        message TEXT NOT NULL
+    );
+    """,
 ]
 
 

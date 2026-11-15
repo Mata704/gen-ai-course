@@ -11,6 +11,9 @@ from data_quality_agent.simulator.models import PipelineIncident, QualityStatus
 
 RunState = Literal["running", "succeeded", "blocked", "failed"]
 RecordStep = Literal["ingested", "transformed"]
+IncidentState = Literal[
+    "awaiting_correction", "investigating", "correcting", "resolved", "unresolved", "analysis_failed",
+]
 
 
 class RunSummary(BaseModel):
@@ -43,3 +46,27 @@ class ToolCall(BaseModel):
     outcome: Literal["ok", "error", "blocked"]
     detail: str
     duration_ms: int
+
+
+class IncidentWorkflow(BaseModel):
+    incident_id: str
+    latest_run_id: str
+    status: IncidentState
+    updated_at: datetime
+
+
+class AgentSession(BaseModel):
+    session_id: str
+    run_id: str
+    status: Literal["running", "completed", "failed"]
+    started_at: datetime
+    finished_at: datetime | None
+    outcome: dict[str, Any] | None
+    error: str | None
+
+
+class AgentStep(BaseModel):
+    timestamp: datetime
+    agent: str
+    kind: str
+    message: str

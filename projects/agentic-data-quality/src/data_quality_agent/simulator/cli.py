@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 
 from data_quality_agent.persistence.database import DEFAULT_DATABASE
+from data_quality_agent.agents.config import configured_model
+from data_quality_agent.agents.team import AgentExecutionError
 from data_quality_agent.service import PipelineService
 from data_quality_agent.simulator.engine import SCENARIOS_DIR
 
@@ -32,13 +34,16 @@ def main() -> int:
         type=Path,
         help="Destination SQLite file for approved data (defaults to warehouse.sqlite3 next to --database).",
     )
+    parser.add_argument("--agents", action="store_true", help="Investigate incidents with the configured OpenAI agents.")
     args = parser.parse_args()
 
     scenario_path = Path(args.scenario)
     try:
         service = PipelineService(database_path=args.database, warehouse_path=args.warehouse)
-        result = service.run(scenario_path, input_path=args.input)
-    except (OSError, ValueError) as error:
+        result = service.run(
+            scenario_path, input_path=args.input, agent_model=configured_model() if args.agents else None,
+        )
+    except (OSError, ValueError, AgentExecutionError) as error:
         print(f"Simulation failed: {error}", file=sys.stderr)
         return 2
 

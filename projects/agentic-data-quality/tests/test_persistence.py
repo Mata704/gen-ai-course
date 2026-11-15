@@ -7,9 +7,11 @@ import pytest
 
 from data_quality_agent.persistence import Database
 from data_quality_agent.persistence.database import MIGRATIONS
+from data_quality_agent.persistence.incidents import IncidentRepository
+from data_quality_agent.persistence.repository import definition_version
 from data_quality_agent.service import PipelineService
 from data_quality_agent.simulator.destination import SQLiteDestination
-from data_quality_agent.simulator.engine import SCENARIOS_DIR
+from data_quality_agent.simulator.engine import SCENARIOS_DIR, load_pipeline
 from data_quality_agent.simulator.models import StageName, StageStatus
 
 
@@ -94,3 +96,30 @@ def test_migrations_bring_an_older_control_database_up_to_date(tmp_path: Path) -
     assert database.schema_version == len(MIGRATIONS)
     with database.transaction() as connection:
         assert connection.execute("SELECT name FROM sqlite_master WHERE name = 'pipeline_output'").fetchall() == []
+
+
+def test_existing_incidents_get_a_stable_workflow_when_migrated(tmp_path: Path) -> None:
+    path = tmp_path / "old.sqlite3"
+    pipeline = load_pipeline("orders_daily")
+    version = definition_version(pipeline)
+    with closing(sqlite3.connect(path)) as connection, connection:
+        connection.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
+        for script in MIGRATIONS[:3]:
+            connection.executescript(script)
+        connection.executemany("INSERT INTO schema_migrations VALUES (?, 'x')", [(1,), (2,), (3,)])
+        connection.execute(
+            "INSERT INTO pipelines VALUES (?, ?, ?, ?, '2026-11-15T00:00:00+00:00')",
+            (pipeline.pipeline_id, version, pipeline.name, pipeline.model_dump_json()),
+        )
+        connection.execute(
+            "INSERT INTO pipeline_runs (run_id, pipeline_id, pipeline_version, scenario_id, seed, "
+            "status, destination, started_at) VALUES ('old-run', ?, ?, 'old-scenario', 0, 'blocked', ?, ?)",
+            (pipeline.pipeline_id, version, str(tmp_path / "warehouse.sqlite3"), "2026-11-15T00:00:00+00:00"),
+        )
+        connection.execute(
+            "INSERT INTO incidents VALUES ('old-run', ?, 'data_quality', 'pending_analysis', "
+            "'Invalid batch', '[]', '2026-11-15T00:00:00+00:00')", (pipeline.pipeline_id,),
+        )
+    incident = IncidentRepository(Database(path)).get_for_run("old-run")
+    assert incident.incident_id == incident.latest_run_id == "old-run"
+    assert incident.status == "awaiting_correction"

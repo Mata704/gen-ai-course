@@ -111,6 +111,7 @@ class RunTracker:
         if event.kind == EventKind.STAGE_STARTED:
             step.state = StepState.RUNNING
             step.started_at = event.timestamp
+            step.finished_at = None
         elif event.kind == EventKind.STAGE_FINISHED and event.status is not None:
             step.state = _FINISHED_STATES[event.status]
             if step.started_at is not None:

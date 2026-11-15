@@ -12,6 +12,8 @@ import streamlit as st
 
 from data_quality_agent.persistence.database import DEFAULT_DATABASE, Database
 from data_quality_agent.persistence.repository import RunRepository
+from data_quality_agent.agents.config import configured_model
+from data_quality_agent.agents.team import AgentExecutionError
 from data_quality_agent.service import PipelineService
 from data_quality_agent.simulator.engine import SCENARIOS_DIR, load_scenario
 from data_quality_agent.simulator.models import EventKind, PipelineEvent, Scenario
@@ -24,6 +26,7 @@ from data_quality_agent.ui.components import (
     render_run,
 )
 from data_quality_agent.ui.view_model import RunTracker
+from data_quality_agent.ui.incidents import render_incident
 
 PAUSES_KEY = "pauses"
 DEFAULT_SCENARIO = "healthy-orders"
@@ -37,7 +40,7 @@ def load_scenarios() -> dict[str, tuple[Path, Scenario]]:
     return dict(sorted(scenarios.items(), key=lambda item: item[0] != DEFAULT_SCENARIO))
 
 
-def execute_run(path: Path, scenario: Scenario, database: str, pause: float) -> None:
+def execute_run(path: Path, scenario: Scenario, database: str, pause: float, run_agents: bool) -> None:
     placeholder = st.empty()
     tracker = RunTracker()
 
@@ -48,7 +51,14 @@ def execute_run(path: Path, scenario: Scenario, database: str, pause: float) -> 
             time.sleep(pause)
 
     try:
-        result = PipelineService(database).run(path, on_event=on_event)
+        result = PipelineService(database).run(
+            path, on_event=on_event, agent_model=configured_model() if run_agents else None,
+        )
+    except AgentExecutionError as error:
+        st.session_state["execution_error"] = str(error)
+        st.session_state[NEXT_SELECTION_KEY] = error.run_id
+        st.rerun()
+        return
     except (OSError, ValueError) as error:
         st.error(f"A execução não terminou: {error}")
         return
@@ -78,9 +88,16 @@ def main() -> None:
             "Pausa visual por etapa (s)", 0.0, 2.0, 0.8, 0.1, key="pause",
             help="Só abranda a apresentação para acompanhar a etapa atual; não altera a pipeline.",
         )
-        run_clicked = st.button("▶ Executar pipeline", type="primary", width="stretch")
+        run_agents = st.checkbox(
+            "Investigar incidentes com agentes (OpenAI)", value=False, key="run_agents",
+            help="Usa OPENAI_MODEL e OPENAI_API_KEY do curso. Envia ao modelo apenas o contexto "
+            "e os dados consultados pelas tools. Sem esta opção, executa só o simulador.",
+        )
+        run_clicked = st.button("▶ Executar pipeline", type="primary", width="stretch", key="execute_pipeline")
 
     st.title("Pipeline de Data Quality")
+    if "execution_error" in st.session_state:
+        st.error(st.session_state.pop("execution_error"))
     history, detail = st.columns([1, 3], gap="large")
     runs = RunRepository(Database(database))
     summaries = runs.list_runs(finished_only=True, limit=HISTORY_LIMIT)
@@ -88,13 +105,14 @@ def main() -> None:
         render_history(summaries)
     with detail:
         if run_clicked:
-            execute_run(path, scenario, database, pause)
+            execute_run(path, scenario, database, pause, run_agents)
         elif summaries:
             selected_id = st.session_state.get(SELECTED_KEY, summaries[0].run_id)
             summary = next(s for s in summaries if s.run_id == selected_id)
             result = runs.get_run(selected_id)
             if result is not None:
                 render_run(result, summary, st.session_state[PAUSES_KEY].get(selected_id))
+                render_incident(PipelineService(database), result, run_agents)
 
 
 main()

@@ -316,6 +316,50 @@ execução, revalidação, retoma e memória.
 - `uv run --locked --extra dev pytest -q -p no:cacheprovider` — 47 testes
   passaram, incluindo a interface, persistência, simulador e MCP.
 
+## 2026-11-15 — Agentes PydanticAI e correções no mesmo incidente
+
+### Feito
+
+- Implementada a equipa com orquestrador e especialistas de qualidade,
+  diagnóstico, remediação e revisão. O orquestrador só delega; as consultas
+  dos especialistas passam pelo catálogo e pelo gateway.
+- As tools MCP chegam aos agentes com as descrições em texto e os esquemas
+  aprovados. Foram acrescentadas referências de auditoria `tool_ref`.
+- Outputs estruturados Pydantic, validação de referências observadas e
+  confirmação determinística antes de aceitar uma resolução pelo modelo.
+  Há limites de pedidos, chamadas, delegações e tempo de execução.
+- Configuração OpenAI igual à do curso. Os agentes são opcionais no frontend
+  e no CLI (`--agents`), sem credenciais nos ficheiros versionados.
+- Migração 4: incidentes estáveis, tentativas de correção, investigações e
+  passos dos agentes. Incidentes anteriores recebem uma associação inicial.
+- O frontend aceita texto ou ficheiro JSON corrigido, com motivo e limite
+  de 1 MB. Cada tentativa preserva o incidente e as regras originais, sem
+  repetir as falhas sintéticas do cenário.
+- Correções inválidas mantêm o incidente aberto. Só os lotes aprovados pelo
+  gate são entregues; não é permitida uma segunda entrega do mesmo lote já
+  carregado. A investigação/verificação pode ser repetida se tiver falhado.
+- Os registos afetados são marcados como dados não confiáveis. Os logs e os
+  runbooks mantêm o tratamento anterior.
+- A interface apresenta conclusões, passos dos agentes e histórico das
+  tentativas. Ajustada a duração de etapas quando uma investigação é reiniciada.
+
+### Validação
+
+- `uv run --locked --extra dev pytest -q -p no:cacheprovider` — 64 testes
+  passaram. Chamadas a modelos externos estão proibidas na suite; os testes
+  dos agentes usam `FunctionModel`.
+- Verificadas descrições/esquemas recebidos pelo modelo, delegação, rejeição
+  de evidências inventadas e de resolução sem recuperação, correções
+  sucessivas no frontend, regras/destino originais e migração de incidentes antigos.
+- `uv lock --check`, compilação dos módulos e `uv build` — concluídos.
+  Confirmados os novos módulos e os dados incluídos no wheel.
+
+### Ainda por fazer
+
+Ações autónomas controladas, permissões e aprovações humanas, retoma de
+processos interrompidos, memória, filtro de dados pessoais e avaliação dos
+modelos reais com o conjunto de dados maior previsto para o final.
+
 ## Próximos registos
 
 Adicionar uma nova secção datada quando um marco for concluído. Atualizar este

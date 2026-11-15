@@ -128,7 +128,7 @@ def render_run(result: PipelineRun, summary: RunSummary, pause: float | None) ->
 
     render_pipeline_graph(tracker)
     if result.incident is not None:
-        st.warning(f"Incidente `{result.incident.kind}` à espera de análise: {result.incident.summary}")
+        st.warning(f"Incidente detetado nesta tentativa: `{result.incident.kind}` — {result.incident.summary}")
     for error in result.errors:
         st.error(error)
 

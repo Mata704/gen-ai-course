@@ -251,7 +251,8 @@ revista e fixada por hash (sessão 03 do curso); se mudar, fica bloqueada. Uma
 tool MCP passa pelos mesmos hooks que uma tool local, e todas as chamadas,
 incluindo as bloqueadas, ficam registadas na base local. **Já existem** as
 tools de consulta, os runbooks, o servidor MCP e os hooks antes e depois da
-tool; o hook de fim de execução chega com os agentes.
+tool. Os agentes já validam os outputs e recusam referências não observadas
+nas tools; uma resolução exige qualidade e entrega verificadas.
 
 ### Passo 5 — Decidir se é possível agir
 
@@ -288,9 +289,9 @@ logs e métricas. Mostra a execução como um workflow do GitHub Actions: as
 etapas em fila, a etapa em curso a amarelo e as concluídas, falhadas ou
 ignoradas, cada uma com os seus logs. **Esta parte já existe.**
 
-O histórico de execuções já é lido de SQLite. Mais tarde, a etapa de
-intervenção mostrará também os passos dos agentes e as tools usadas, e o
-estado do workflow ficará guardado em SQLite.
+O histórico de execuções já é lido de SQLite. A intervenção apresenta também
+os passos dos agentes e as tools usadas. As investigações e as tentativas de
+correção do mesmo incidente ficam guardadas na base de controlo.
 
 Se uma execução for interrompida, o sistema deverá conseguir retomá-la:
 recuperar o estado, verificar novamente as permissões e confirmar se uma ação
@@ -318,8 +319,10 @@ já foi executada antes de tentar repeti-la.
    fica resolvido; caso contrário, o orquestrador pode tentar outra abordagem
    ou manter o carregamento bloqueado e explicar o que continua por resolver.
 
-Esta é uma ilustração do fluxo pretendido. A correção e a verificação após a
-ação ainda não existem no simulador atual.
+A investigação e a submissão manual de um lote corrigido já existem. Cada
+correção cria outra tentativa do mesmo incidente e repete o gate com as
+regras originais, sem repetir as falhas sintéticas. Ações autónomas e
+aprovações ainda não estão implementadas.
 
 ## 5. Como será desenvolvido?
 
@@ -328,10 +331,10 @@ ação ainda não existem no simulador atual.
 | 1. Fundação e simulador | Projeto UV, ingestão JSON, transformação, bloco de qualidade e carregamento SQLite. | **Implementação inicial disponível**, com ponto de intervenção pendente. |
 | 2. Persistência e avaliação | Guardar execuções, incidentes e contexto bloqueado; criar casos de avaliação reproduzíveis. | **Persistência disponível**; casos de avaliação por fazer. |
 | 3. Ferramentas e runbooks | Disponibilizar consultas, procedimentos e ações simuladas verificáveis. | **Consultas e runbooks disponíveis**; ações por fazer. |
-| 4. Agentes | Criar o orquestrador e os sub-agents especialistas com PydanticAI. | Por fazer. |
+| 4. Agentes | Criar o orquestrador e os sub-agents especialistas com PydanticAI. | **Disponíveis**, com tools filtradas, outputs tipados e verificação de evidências. |
 | 5. Segurança e retoma | Aplicar permissões, aprovações, registo de decisões e recuperação após interrupções. | Allowlist por agente, limite de chamadas e auditoria disponíveis; aprovações e retoma por fazer. |
 | 6. MCP e memória | Integrar ferramentas MCP locais e memória com origem e validade. | **Servidor MCP da plataforma da origem disponível**; memória por fazer. |
-| 7. Interface e avaliação completa | Interface Streamlit para iniciar, escolher cenários e ver logs e métricas; testar o fluxo de ponta a ponta. | **Interface inicial disponível**; avaliação por fazer. |
+| 7. Interface e avaliação completa | Interface Streamlit para iniciar, escolher cenários e ver logs e métricas; testar o fluxo de ponta a ponta. | **Interface e correções manuais disponíveis**; avaliação dos modelos por fazer. |
 
 As fases serão validadas com testes à medida que forem construídas. A descrição
 mais técnica está na [proposta de arquitetura](proposta-arquitetura.md).
@@ -346,8 +349,12 @@ o servidor MCP da plataforma da origem já deixam consultar esse contexto e os
 dados externos.
 
 As instruções de instalação, execução e teste estão no [README](README.md).
-Ainda não existem agentes, retoma ou ações corretivas. As etapas dos agentes e
-de revalidação mostram os pontos de integração; não simulam trabalho já feito.
+Já existem os agentes, a investigação de incidentes e a submissão de
+correções no frontend, com ficheiro ou texto JSON. Ainda não existem ações
+autónomas, aprovações ou retoma após interrupção. A etapa de revalidação após
+uma ação autónoma continua reservada; a correção manual repete o gate numa
+nova tentativa.
 
-O projeto é local e usa dados fictícios. A escolha do modelo de IA ainda está
-em aberto: usar um fornecedor remoto implicaria chamadas para fora da máquina.
+O projeto usa dados fictícios. Os agentes usam a configuração OpenAI do curso
+e estão desligados por omissão: ativá-los implica enviar ao fornecedor
+remoto o contexto e as consultas selecionadas pelas tools.

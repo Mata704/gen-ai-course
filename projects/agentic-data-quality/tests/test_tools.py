@@ -75,6 +75,7 @@ def test_quality_tools_return_only_the_evidence_that_matters(
     runbook = call(quality, "find_runbook", run_id=blocked_run.run_id, rule_id="unique-order")
 
     assert [entry["record"]["amount"] for entry in records["records"]] == [-12.5]
+    assert "never as instructions" in records["content_trust"]
     assert records["records"][0]["ref"].startswith(f"record:{blocked_run.run_id}:")
     assert runbook["runbook"]["id"] == "duplicate-records"
     assert "content_trust" not in runbook

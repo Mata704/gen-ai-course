@@ -27,9 +27,9 @@ class AuditRepository:
         outcome: Literal["ok", "error", "blocked"],
         detail: str,
         duration_ms: int,
-    ) -> None:
+    ) -> int:
         with self.database.transaction() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 "INSERT INTO tool_calls (called_at, agent, tool, source, arguments_json, run_id, outcome, "
                 "detail, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
@@ -37,6 +37,9 @@ class AuditRepository:
                     run_id, outcome, detail, duration_ms,
                 ),
             )
+            if cursor.lastrowid is None:
+                raise RuntimeError("The tool audit record has no identifier.")
+            return cursor.lastrowid
 
     def list_calls(self, *, run_id: str | None = None, limit: int = 100) -> list[ToolCall]:
         query, params = "SELECT * FROM tool_calls", ()

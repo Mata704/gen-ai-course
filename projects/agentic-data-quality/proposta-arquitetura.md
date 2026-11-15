@@ -123,9 +123,12 @@ determinístico terão de ser executados novamente antes de carregar os dados.
 Um parecer do modelo não substitui esse controlo.
 
 Nesta fase estão implementados a ingestão, transformação, gate e destino, a
-persistência de cada execução e do seu incidente, as tools de consulta locais
-e o servidor MCP da plataforma da origem. Os agentes, as ações e a retoma continuam previstos para
-fases seguintes. Não há reparação automática fictícia.
+persistência de cada execução e do seu incidente, as tools de consulta locais,
+o servidor MCP da plataforma da origem e a equipa PydanticAI com orquestrador
+e quatro especialistas. A interface aceita um lote corrigido para o mesmo
+incidente, numa nova tentativa com as regras originais. Ações autónomas,
+aprovações e retoma após interrupção continuam previstas para fases seguintes.
+Não há reparação automática fictícia.
 
 ## 6. Arquitetura proposta
 
@@ -264,7 +267,7 @@ sequenceDiagram
     WF->>DB: Guardar checkpoint
     opt Há ação possível
         O->>RM: Tarefa: preparar ação com evidência e restrições
-        RM->>H: Pedido de tool de ação (MCP)
+        RM->>H: Pedido de tool de ação local
         H->>A: Hook antes: identidade, permissão e política
         alt Aprovação necessária
             A-->>User: Criar pedido de aprovação pendente
@@ -376,8 +379,10 @@ depois (limite de tamanho e marca de conteúdo não confiável para o texto
 livre da origem: alterações de esquema e incidentes da origem), e todas ficam
 auditadas em `tool_calls` da base local, com a origem. As tools são só de
 leitura, e as locais nunca revelam o cenário nem os logs que só descrevem a
-simulação. Ficam por fazer: ações (serão tools locais, porque a plataforma é
-só de consulta), autorização e aprovações e o hook de fim de execução.
+simulação. Os agentes validam as referências dos seus outputs contra as
+tools efetivamente usadas; a resolução exige revisão independente e
+confirmação determinística. Ficam por fazer: ações (serão tools locais,
+porque a plataforma é só de consulta), autorização e aprovações.
 
 ## 11. Persistência e memória
 
@@ -401,13 +406,15 @@ apresentados como factos atuais. Escrita, correção, esquecimento e proposta de
 runbook seguem políticas explícitas; procedimento operacional só é publicado
 após revisão humana.
 
-**Implementado (migrações 1 a 3), na base de controlo:** `pipelines` (versionada por hash da definição),
+**Implementado (migrações 1 a 4), na base de controlo:** `pipelines` (versionada por hash da definição),
 `pipeline_runs` (com o caminho do destino de cada execução), `run_stages`,
 `run_events` (gravados ao vivo, modo WAL), `run_records`, `quality_findings`,
 `incidents` e `tool_calls` (auditoria das tools, com a origem `local` ou
-`mcp`, acrescentada na migração 2). Os
-workflows, ações, aprovações e memórias serão acrescentados em novas
-migrações com os agentes. Os runbooks são ficheiros versionados, não linhas da
+`mcp`, acrescentada na migração 2). A migração 4 acrescenta
+`incident_workflows` e `incident_attempts` (identidade estável e correções),
+e `agent_sessions` e `agent_steps` (outputs, falhas e passos dos agentes).
+Checkpoints para retoma, ações, aprovações e memórias serão acrescentados em
+novas migrações. Os runbooks são ficheiros versionados, não linhas da
 base de dados. Há mais dois ficheiros fora destas migrações: o destino
 (`runs/warehouse.sqlite3`, tabela `pipeline_output` com os dados aprovados,
 retirada da base de controlo na migração 3) e a plataforma da origem, só de

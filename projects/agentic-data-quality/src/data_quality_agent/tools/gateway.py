@@ -5,7 +5,7 @@ Hooks run in code at fixed points, whatever the model decides (course session 05
 - after_tool:  guardrails on what the agent is about to read (size, untrusted content).
 Every call is written to the local `tool_calls` audit table, including blocked and failed ones,
 with the source of the tool. The external MCP server is never written to.
-The end-of-run hook (evidence required) belongs to the agent runs and comes with the agents.
+Agent reports and final evidence requirements are validated by the agent team.
 """
 
 from __future__ import annotations
@@ -88,6 +88,8 @@ class ToolGateway:
         spec = CATALOG.get(name)
 
         reason = before_tool(self.session, name, spec, self.platform)
+        if self.session.run_id is not None and arguments.get("run_id", self.session.run_id) != self.session.run_id:
+            reason = "This tool session is scoped to its current run."
         if reason is not None or spec is None:
             self._record(name, spec, arguments, "blocked", reason or "", started)
             return {"status": "blocked", "reason": reason}
@@ -104,8 +106,8 @@ class ToolGateway:
 
         result = after_tool(spec, result)
         outcome = "error" if "error" in result else "ok"
-        self._record(name, spec, arguments, outcome, result.get("error", ""), started)
-        return result
+        call_id = self._record(name, spec, arguments, outcome, result.get("error", ""), started)
+        return {**result, "tool_ref": f"tool:{call_id}"} if outcome == "ok" else result
 
     async def _execute(self, spec: ToolSpec, arguments: dict[str, Any]) -> dict[str, Any]:
         if spec.source == "local":
@@ -116,9 +118,9 @@ class ToolGateway:
     def _record(
         self, name: str, spec: ToolSpec | None, arguments: dict[str, Any], outcome: str, detail: str,
         started: float,
-    ) -> None:
+    ) -> int:
         run_id = arguments.get("run_id")
-        self.audit.record(
+        return self.audit.record(
             agent=self.session.agent,
             tool=name,
             source=spec.source if spec else None,

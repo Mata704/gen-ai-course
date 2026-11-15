@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from data_quality_agent.simulator.destination import (
@@ -66,12 +67,18 @@ class PipelineSimulator:
         *,
         input_path: str | Path | None = None,
         on_event: EventListener | None = None,
+        input_records: list[dict[str, Any]] | None = None,
+        pipeline_definition: PipelineDefinition | None = None,
     ) -> PipelineRun:
         """Run the pipeline; `on_event` receives each progress event as it happens."""
         if isinstance(scenario, (str, Path)):
             scenario = load_scenario(scenario)
 
-        pipeline = load_pipeline(scenario.pipeline_id)
+        if input_path is not None and input_records is not None:
+            raise ValueError("Provide input_path or input_records, not both.")
+        pipeline = pipeline_definition or load_pipeline(scenario.pipeline_id)
+        if pipeline.pipeline_id != scenario.pipeline_id:
+            raise ValueError("The scenario and pipeline definition do not match.")
         stages = {name: StageResult(name=name, status=StageStatus.SKIPPED) for name in StageName}
         result = PipelineRun(
             run_id=str(uuid4()),
@@ -88,7 +95,7 @@ class PipelineSimulator:
         )
         recorder = RunRecorder(result, stages, on_event)
         try:
-            self._execute(scenario, pipeline, result, recorder, input_path)
+            self._execute(scenario, pipeline, result, recorder, input_path, input_records)
         except (OSError, ValueError) as error:
             recorder.abort(str(error))
             raise
@@ -102,6 +109,7 @@ class PipelineSimulator:
         result: PipelineRun,
         recorder: RunRecorder,
         input_path: str | Path | None,
+        input_records: list[dict[str, Any]] | None,
     ) -> None:
         recorder.start(StageName.INGESTION)
         recorder.log(
@@ -127,8 +135,14 @@ class PipelineSimulator:
             self._await_agents(recorder, result.incident)
             return
 
-        source = str(input_path) if input_path is not None else f"bundled dataset '{pipeline.dataset_file}'"
-        records = load_records(pipeline, scenario.seed, input_path)
+        source = (
+            "user-submitted corrected batch" if input_records is not None else
+            str(input_path) if input_path is not None else f"bundled dataset '{pipeline.dataset_file}'"
+        )
+        records = (
+            [dict(row) for row in input_records] if input_records is not None else
+            load_records(pipeline, scenario.seed, input_path)
+        )
         recorder.log(f"Read {len(records)} records from {source}.")
         for fault in scenario.faults:
             if fault.kind in (FaultKind.SOURCE_UNAVAILABLE, FaultKind.PIPELINE_FAILURE):
@@ -218,5 +232,5 @@ class PipelineSimulator:
     def _await_agents(recorder: RunRecorder, incident: PipelineIncident) -> None:
         recorder.start(StageName.AGENT_INTERVENTION)
         recorder.log(f"Incident '{incident.kind}' opened: {incident.summary}", LogLevel.WARNING)
-        recorder.log("Waiting for agent intervention (agents are not implemented yet).", LogLevel.WARNING)
+        recorder.log("Agent analysis or a corrected batch is required before recovery.", LogLevel.WARNING)
         recorder.finish(StageName.AGENT_INTERVENTION, StageStatus.PENDING)
