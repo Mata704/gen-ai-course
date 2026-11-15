@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
@@ -68,6 +69,18 @@ class QualityStatus(str, Enum):
     NOT_RUN = "not_run"
 
 
+class EventKind(str, Enum):
+    STAGE_STARTED = "stage_started"
+    STAGE_FINISHED = "stage_finished"
+    LOG = "log"
+
+
+class LogLevel(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+
 class Fault(StrictModel):
     kind: FaultKind
     row_index: int | None = Field(default=None, ge=0)
@@ -121,6 +134,19 @@ class StageResult(StrictModel):
     status: StageStatus
 
 
+class PipelineEvent(StrictModel):
+    """Progress notification emitted while a run executes, in stage order."""
+
+    sequence: int = Field(ge=0)
+    run_id: str
+    timestamp: datetime
+    kind: EventKind
+    stage: StageName | None = None
+    status: StageStatus | None = None
+    level: LogLevel = LogLevel.INFO
+    message: str
+
+
 class PipelineIncident(StrictModel):
     run_id: str
     scenario_id: str
@@ -149,3 +175,4 @@ class PipelineRun(StrictModel):
     destination: str
     output_records: list[dict[str, Any]] = Field(default_factory=list)
     incident: PipelineIncident | None = None
+    events: list[PipelineEvent] = Field(default_factory=list)

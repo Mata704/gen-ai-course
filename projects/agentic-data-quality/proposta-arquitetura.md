@@ -158,7 +158,7 @@ flowchart TB
 
 | Camada | Responsabilidade |
 |---|---|
-| Apresentação | Streamlit lê serviços de consulta e permite iniciar, aprovar ou retomar operações permitidas. Não contém regras de negócio. |
+| Apresentação | Streamlit permite iniciar execuções, escolher cenários e acompanhar logs e métricas. Não contém regras de negócio. |
 | Application Services | Casos de uso para executar pipelines, abrir/investigar incidentes, aprovar ações e retomar workflows. |
 | Workflow Executor | Guarda checkpoints, transições, tentativas e eventos; valida entradas e saídas dos agentes; implementa recuperação. |
 | Agentes | Interpretam pedidos e evidência e devolvem contratos estruturados. Não acedem diretamente a SQLite, ficheiros ou simulador. |
@@ -374,22 +374,26 @@ após revisão humana.
 
 ## 12. Interface Streamlit
 
-Páginas previstas:
+Âmbito decidido: a interface serve apenas para **iniciar o processo, escolher
+cenários e ver logs e métricas**. Apresenta cada execução ao estilo de um
+workflow do GitHub Actions: um grafo com as etapas, a etapa em curso destacada
+em tempo real e um bloco de logs expansível por etapa.
 
-1. **Visão geral:** saúde simulada, pipelines, incidentes abertos e workflows
-   pendentes.
-2. **Pipelines e cenários:** selecionar pipeline, dados sintéticos e cenário;
-   iniciar uma execução.
-3. **Incidentes:** achados, evidências, diagnóstico, runbooks e estado atual.
-4. **Workflow:** agentes envolvidos, decisões, chamadas de tools, checkpoints
-   e erros.
-5. **Aprovações:** ação, alvo, risco, evidência, solicitante e controlos para
-   aprovar ou rejeitar.
-6. **Histórico e avaliação:** execuções passadas, ações verificadas e
-   resultados dos casos de avaliação.
+Implementado (módulo `src/data_quality_agent/ui/`):
 
-A camada visual invoca serviços de aplicação e apresenta estados persistidos;
-não contém autorização, coordenação de agentes ou regras de Data Quality.
+- seleção de cenário, destino SQLite e botão de execução;
+- acompanhamento ao vivo através dos eventos publicados pelo motor
+  (`stage_started`, `stage_finished` e `log`);
+- lista das execuções da sessão, métricas do lote, regras falhadas, incidente
+  e dados recebidos, transformados e carregados.
+
+Previsto, quando existirem: passos e logs dos agentes e das tools dentro da
+etapa de intervenção, e histórico lido de SQLite em vez da sessão do browser.
+Como a interface não inclui aprovações, o canal para a aprovação humana fica em
+aberto.
+
+A camada visual invoca serviços de aplicação e apresenta estados; não contém
+autorização, coordenação de agentes ou regras de Data Quality.
 
 ## 13. Correspondência com o curso
 

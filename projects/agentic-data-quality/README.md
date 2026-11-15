@@ -70,6 +70,7 @@ dos dados internos de demonstração; ficheiros recebidos mantêm a sua ordem.
 - `records`: lote após transformação, com as evidências dos problemas.
 - `output_records`: registos efetivamente carregados e verificados.
 - `incident`: motivo e referências para futura análise pelos agentes.
+- `events`: eventos de progresso e logs por etapa, pela ordem em que ocorreram.
 
 Um lote bloqueado não é enviado para SQLite, não apaga lotes anteriores e não
 recebe uma correção automática fictícia. Uma falha da origem não executa o
@@ -82,9 +83,38 @@ em bloqueio ou falha. Consulta `pipeline_status` no JSON. Código 2 indica erro
 de argumentos ou entrada inválida.
 
 **Ainda por implementar:** agentes PydanticAI, ações corretivas, revalidação
-após ações, retoma, memória, MCP e Streamlit. SQLite guarda atualmente apenas
+após ações, retoma, memória e MCP. SQLite guarda atualmente apenas
 a saída aprovada; incidentes e contexto bloqueado são apresentados no JSON,
 mas ainda não têm persistência própria.
+
+## Interface Streamlit
+
+```powershell
+uv run --locked data-quality-ui
+```
+
+Abre `http://localhost:8501` (só escuta em `localhost`). A interface serve para
+iniciar execuções, escolher o cenário e acompanhar logs e métricas; não
+contém regras de negócio.
+
+- **Barra lateral:** cenário, destino SQLite, pausa visual por etapa e botão
+  **Executar pipeline**.
+- **Execução ao vivo**, ao estilo GitHub Actions: um grafo com as seis etapas
+  (⚪ em fila, 🟡 em execução, ✅ concluída, ❌ falhou, ⏭️ ignorada, ⏸️ a
+  aguardar agentes) e um bloco expansível por etapa com os seus logs.
+- **Execuções:** lista das execuções desta sessão do browser, com contagem
+  por resultado; selecionar uma mostra métricas (registos recebidos e
+  carregados, regras falhadas, linhas afetadas, atraso e duração), regras que
+  falharam, incidente e dados do lote.
+
+A pipeline demora milissegundos; a pausa visual (por omissão 0,8 s) só
+abranda a apresentação para se ver a etapa atual e entra nas durações
+mostradas. Pode ser posta a 0. O histórico de execuções existe apenas na sessão
+do browser; a persistência das execuções ainda está por implementar.
+
+O motor publica o progresso através de eventos (`stage_started`,
+`stage_finished` e `log`), passados a `PipelineSimulator.run(..., on_event=...)`
+e também guardados em `events` no resultado JSON do CLI.
 
 ## Testes
 

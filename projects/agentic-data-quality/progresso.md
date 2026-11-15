@@ -111,6 +111,43 @@ apenas os dados aprovados; o contexto do lote bloqueado é devolvido em JSON.
   lista de tools prevista por sub-agent.
 - Alteração apenas documental; o código não mudou.
 
+## 2026-11-15 — Interface Streamlit ao estilo GitHub Actions
+
+### Feito
+
+- O motor passou a publicar eventos de progresso (`stage_started`,
+  `stage_finished` e `log`) através de `run(..., on_event=...)`, sempre pela
+  ordem das etapas. Os eventos também ficam em `events` no resultado. A lógica
+  e os estados da pipeline não mudaram.
+- Erros inesperados na leitura da entrada fecham a etapa em curso como
+  falhada antes de propagar o erro.
+- Criado o módulo `src/data_quality_agent/ui/` e o comando
+  `data-quality-ui`, que só escuta em `localhost`:
+  - barra lateral para escolher o cenário, o destino SQLite e uma pausa visual
+    por etapa, e iniciar a execução;
+  - grafo das seis etapas e logs por etapa, atualizados ao vivo, com a etapa
+    em curso destacada;
+  - lista das execuções da sessão, métricas, regras falhadas, incidente e
+    dados do lote.
+- A lógica de apresentação (`view_model.py`) está separada do Streamlit e é
+  testada diretamente.
+- Adicionada a dependência `streamlit`.
+
+### Validação
+
+- `uv run --locked --extra dev pytest -q` — 26 testes passaram, incluindo os
+  eventos ao vivo e a sua ordem, os logs das regras falhadas, o fecho da
+  execução com erro de entrada, o estado intermédio do grafo e um teste da
+  página com `streamlit.testing` (duas execuções e mudança de seleção).
+- Servidor arrancado e verificado no browser: acompanhamento ao vivo, grafo e
+  lista de execuções. Um erro de seleção da execução mais recente, apanhado
+  pelo teste da página, foi corrigido.
+
+### Ainda por fazer
+
+O histórico de execuções existe apenas na sessão do browser. Os passos dos
+agentes e das tools ainda não aparecem, porque ainda não existem.
+
 ## Próximos registos
 
 Adicionar uma nova secção datada quando um marco for concluído. Atualizar este

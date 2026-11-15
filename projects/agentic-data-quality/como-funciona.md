@@ -262,9 +262,13 @@ confirmar o efeito, o problema permanecerá por resolver.
 
 ### Passo 7 — Mostrar e guardar o histórico
 
-Uma interface Streamlit deverá mostrar as pipelines, incidentes, métricas,
-agentes envolvidos, ferramentas usadas, aprovações, ações e resultados. O
-histórico e o estado do workflow deverão ficar guardados em SQLite.
+A interface Streamlit serve para iniciar o processo, escolher o cenário e ver
+logs e métricas. Mostra a execução como um workflow do GitHub Actions: as
+etapas em fila, a etapa em curso a amarelo e as concluídas, falhadas ou
+ignoradas, cada uma com os seus logs. **Esta parte já existe.**
+
+Mais tarde, a etapa de intervenção mostrará também os passos dos agentes e as
+tools usadas, e o histórico e o estado do workflow ficarão guardados em SQLite.
 
 Se uma execução for interrompida, o sistema deverá conseguir retomá-la:
 recuperar o estado, verificar novamente as permissões e confirmar se uma ação
@@ -305,22 +309,22 @@ ação ainda não existem no simulador atual.
 | 4. Agentes | Criar o orquestrador e os sub-agents especialistas com PydanticAI. | Por fazer. |
 | 5. Segurança e retoma | Aplicar permissões, aprovações, registo de decisões e recuperação após interrupções. | Por fazer. |
 | 6. MCP e memória | Integrar ferramentas MCP locais e memória com origem e validade. | Por fazer. |
-| 7. Interface e avaliação completa | Mostrar o sistema em Streamlit e testar o fluxo de ponta a ponta. | Por fazer. |
+| 7. Interface e avaliação completa | Interface Streamlit para iniciar, escolher cenários e ver logs e métricas; testar o fluxo de ponta a ponta. | **Interface inicial disponível**; avaliação por fazer. |
 
 As fases serão validadas com testes à medida que forem construídas. A descrição
 mais técnica está na [proposta de arquitetura](proposta-arquitetura.md).
 
 ## 6. O que já posso experimentar?
 
-Hoje é possível executar a pipeline pela linha de comandos, receber um JSON
-local e acompanhar as etapas no resultado. Os lotes aprovados são efetivamente
-guardados em SQLite. Os lotes com problemas ficam bloqueados e devolvem um
-incidente para futura análise pelos agentes.
+Hoje é possível executar a pipeline pela linha de comandos ou pela interface
+Streamlit, receber um JSON local (no CLI) e acompanhar as etapas e os logs. Os
+lotes aprovados são efetivamente guardados em SQLite. Os lotes com problemas
+ficam bloqueados e devolvem um incidente para futura análise pelos agentes.
 
 As instruções de instalação, execução e teste estão no [README](README.md).
-Ainda não existem agentes, interface Streamlit, persistência do contexto dos
+Ainda não existem agentes, persistência do histórico e do contexto dos
 incidentes, retoma ou ações corretivas. As etapas dos agentes e de revalidação
-no resultado mostram os pontos de integração; não simulam trabalho já feito.
+mostram os pontos de integração; não simulam trabalho já feito.
 
 O projeto é local e usa dados fictícios. A escolha do modelo de IA ainda está
 em aberto: usar um fornecedor remoto implicaria chamadas para fora da máquina.

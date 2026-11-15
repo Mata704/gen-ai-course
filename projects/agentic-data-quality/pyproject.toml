@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.0.0",
+    "streamlit>=1.40",
 ]
 
 [project.optional-dependencies]
@@ -15,6 +16,7 @@ dev = [
 
 [project.scripts]
 data-quality-sim = "data_quality_agent.simulator.cli:main"
+data-quality-ui = "data_quality_agent.ui.launcher:main"
 
 [build-system]
 requires = ["hatchling"]

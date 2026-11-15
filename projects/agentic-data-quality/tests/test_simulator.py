@@ -9,7 +9,15 @@ import pytest
 from data_quality_agent.simulator.cli import main
 from data_quality_agent.simulator.destination import SQLiteDestination
 from data_quality_agent.simulator.engine import DATASETS_DIR, PipelineSimulator, SCENARIOS_DIR, load_pipeline
-from data_quality_agent.simulator.models import PipelineStatus, QualityStatus, StageName, StageStatus
+from data_quality_agent.simulator.models import (
+    EventKind,
+    LogLevel,
+    PipelineEvent,
+    PipelineStatus,
+    QualityStatus,
+    StageName,
+    StageStatus,
+)
 from data_quality_agent.simulator.quality import check_quality
 
 
@@ -291,3 +299,54 @@ def test_delivery_mismatch_rolls_back_the_batch(simulator: PipelineSimulator) ->
             "SELECT COUNT(*) FROM pipeline_output WHERE run_id = ?", (failed.run_id,),
         ).fetchone()[0]
     assert count == 0
+
+
+def test_events_are_published_live_in_stage_order(simulator: PipelineSimulator) -> None:
+    seen: list[PipelineEvent] = []
+    stored_at_quality_start: list[int] = []
+
+    def listener(event: PipelineEvent) -> None:
+        seen.append(event)
+        if event.kind == EventKind.STAGE_STARTED and event.stage == StageName.DATA_QUALITY:
+            with closing(sqlite3.connect(simulator.destination.path)) as connection:
+                tables = connection.execute(
+                    "SELECT name FROM sqlite_master WHERE name = 'pipeline_output'"
+                ).fetchall()
+            stored_at_quality_start.append(len(tables))
+
+    result = simulator.run(SCENARIOS_DIR / "healthy.json", on_event=listener)
+
+    assert seen == result.events
+    assert [event.sequence for event in seen] == list(range(len(seen)))
+    finished = [event for event in seen if event.kind == EventKind.STAGE_FINISHED]
+    assert [event.stage for event in finished] == list(StageName)
+    assert [event.status for event in finished] == [stage.status for stage in result.stages]
+    assert stored_at_quality_start == [0]
+
+
+def test_blocked_run_logs_each_failed_rule_in_the_quality_stage(simulator: PipelineSimulator) -> None:
+    result = simulator.run(SCENARIOS_DIR / "quality_issues.json")
+
+    failures = [
+        event.message.split(":")[0] for event in result.events
+        if event.kind == EventKind.LOG and event.stage == StageName.DATA_QUALITY
+        and event.message.startswith("FAIL ")
+    ]
+    assert failures == [f"FAIL {finding.rule_id}" for finding in result.findings]
+
+
+def test_unexpected_input_error_closes_the_run_as_failed(
+    input_path: Path, simulator: PipelineSimulator,
+) -> None:
+    input_path.write_text("{not-json", encoding="utf-8")
+    seen: list[PipelineEvent] = []
+
+    with pytest.raises(ValueError):
+        simulator.run(SCENARIOS_DIR / "healthy.json", input_path=input_path, on_event=seen.append)
+
+    finished = {event.stage: event.status for event in seen if event.kind == EventKind.STAGE_FINISHED}
+    assert list(finished) == list(StageName)
+    assert finished[StageName.INGESTION] == StageStatus.FAILED
+    assert all(status == StageStatus.SKIPPED for stage, status in finished.items()
+               if stage != StageName.INGESTION)
+    assert any(event.level == LogLevel.ERROR for event in seen)
