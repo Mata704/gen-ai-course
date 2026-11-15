@@ -191,7 +191,7 @@ class RunRepository:
         pipeline_id: str | None = None,
         status: RunState | None = None,
         finished_only: bool = False,
-        limit: int = 50,
+        limit: int | None = 50,
     ) -> list[RunSummary]:
         clauses, params = [], []
         if pipeline_id is not None:
@@ -203,11 +203,12 @@ class RunRepository:
         if finished_only:
             clauses.append("status != 'running'")
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        query = f"SELECT * FROM pipeline_runs {where} ORDER BY started_at DESC, rowid DESC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
         with self.database.transaction() as connection:
-            rows = connection.execute(
-                f"SELECT * FROM pipeline_runs {where} ORDER BY started_at DESC, rowid DESC LIMIT ?",
-                (*params, limit),
-            ).fetchall()
+            rows = connection.execute(query, params).fetchall()
         return [self._summary(row) for row in rows]
 
     def get_summary(self, run_id: str) -> RunSummary | None:

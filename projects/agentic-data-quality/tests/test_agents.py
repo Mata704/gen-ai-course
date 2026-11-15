@@ -7,11 +7,14 @@ from typing import Any
 import pytest
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.usage import RequestUsage
 
+from data_quality_agent.evaluation import evaluate_cases
 from data_quality_agent.harness.specialists import Observed
 from data_quality_agent.harness.team import AgentExecutionError, AgentTeam
 from data_quality_agent.mcp.server import build_server
 from data_quality_agent.persistence.audit import AuditRepository
+from data_quality_agent.persistence.telemetry import TelemetryRepository
 from data_quality_agent.service import PipelineService
 from data_quality_agent.simulator.engine import SCENARIOS_DIR, DATASETS_DIR
 from data_quality_agent.tools import PlatformClient
@@ -195,6 +198,50 @@ def test_remediation_retries_a_failed_ingestion_and_the_reviewer_confirms(tmp_pa
     assert len(retried.output_records) == 40
     outcome = service.incidents.list_sessions(failed.run_id)[0].outcome
     assert outcome["actions_taken"] == [f"action:{action.action_id}"]
+
+
+def test_agent_evaluation_checks_the_retry_trajectory(tmp_path: Path) -> None:
+    report = evaluate_cases(
+        with_agents=True,
+        model=scripted_model(action="retry_ingestion"),
+        scenario_ids=["orders-source-unavailable"],
+        workdir=tmp_path,
+    )
+
+    assert report.passed_cases == 1
+    assert report.failed_cases == 0
+    assert report.results[0].model_calls
+    assert report.results[0].duration_ms > 0
+    assert Path(report.results[0].control_database).is_file()
+
+
+def test_team_records_each_request_once_across_action_attempts(tmp_path: Path) -> None:
+    base = scripted_model(action="retry_ingestion")
+    requests = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        assert base.function is not None
+        response = base.function(messages, info)
+        assert isinstance(response, ModelResponse)
+        response.usage = RequestUsage(input_tokens=100, output_tokens=20)
+        response.model_name = "scripted-usage"
+        requests.append(response)
+        return response
+
+    service = PipelineService(tmp_path / "history.sqlite3")
+    run = service.run(
+        SCENARIOS_DIR / "source_unavailable.json", agent_model=FunctionModel(respond, model_name="scripted-usage"),
+    )
+    workflow = service.incidents.get_for_run(run.run_id)
+    calls = TelemetryRepository(service.database).list_calls()
+
+    assert len(calls) == len(requests)
+    assert sum(call.input_tokens for call in calls) == len(requests) * 100
+    assert sum(call.output_tokens for call in calls) == len(requests) * 20
+    assert {call.model_name for call in calls} == {"scripted-usage"}
+    assert {call.run_id for call in calls} == {run.run_id, workflow.latest_run_id}
+    [session] = service.incidents.list_sessions(run.run_id)
+    assert {call.session_id for call in calls} == {session.session_id}
 
 
 def test_quarantine_delivers_the_rest_and_records_never_reach_the_agents(tmp_path: Path) -> None:

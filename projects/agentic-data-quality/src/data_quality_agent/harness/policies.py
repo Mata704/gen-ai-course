@@ -10,6 +10,7 @@ from data_quality_agent.simulator.models import (
     PipelineDefinition,
     PipelineRun,
     PipelineStatus,
+    QualityRule,
     QualityStatus,
     RuleKind,
 )
@@ -68,3 +69,19 @@ def check_failed_record_disposition(*, current_status: str, target_status: str) 
         raise PolicyDenied("Only a held failed record can be released or discarded.")
     if target_status not in {"released", "discarded"}:
         raise PolicyDenied("A failed record may only be released or discarded.")
+
+
+def check_rule_threshold_change(*, rule: QualityRule, attribute: str, value: int) -> None:
+    """Authorize only bounded dataset-level thresholds; approval cannot broaden this allowlist."""
+    kind = rule.kind
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise PolicyDenied("Rule threshold values must be integers.")
+    if kind == RuleKind.MIN_ROWS and attribute == "minimum_count":
+        if not 1 <= value <= 1000:
+            raise PolicyDenied("The minimum row threshold must be between 1 and 1000.")
+        return
+    if kind == RuleKind.FRESHNESS and attribute == "maximum_delay_minutes":
+        if not 0 <= value <= 1440:
+            raise PolicyDenied("The freshness threshold must be between 0 and 1440 minutes.")
+        return
+    raise PolicyDenied("Only the minimum-row and freshness thresholds may be changed.")

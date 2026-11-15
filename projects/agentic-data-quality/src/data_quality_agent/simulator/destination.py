@@ -70,6 +70,17 @@ class SQLiteDestination:
         with closing(sqlite3.connect(self.path, timeout=10)) as connection, connection:
             connection.execute("DELETE FROM pipeline_output WHERE run_id = ?", (run_id,))
 
+    def clear(self) -> None:
+        """Erase delivered data without creating a previously unused warehouse."""
+        if not self.path.is_file():
+            return
+        with closing(sqlite3.connect(self.path, timeout=10)) as connection, connection:
+            exists = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'pipeline_output'"
+            ).fetchone()
+            if exists:
+                connection.execute("DELETE FROM pipeline_output")
+
     def read(self, run_id: str) -> list[dict[str, Any]]:
         """Records delivered by a run; empty if nothing was ever loaded here. Never creates the file."""
         if not self.path.is_file():

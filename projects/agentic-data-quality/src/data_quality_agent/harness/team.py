@@ -25,6 +25,7 @@ from data_quality_agent.harness.model import (
     REQUEST_TIMEOUT_SECONDS,
 )
 from data_quality_agent.harness.orchestrator import OrchestrationResult
+from data_quality_agent.harness.telemetry import RecordedModel
 from data_quality_agent.harness.specialists import (
     COMMON_INSTRUCTIONS,
     AgentRole,
@@ -34,6 +35,7 @@ from data_quality_agent.harness.specialists import (
 )
 from data_quality_agent.persistence.audit import AuditRepository
 from data_quality_agent.persistence.repository import RunRepository
+from data_quality_agent.persistence.telemetry import TelemetryRepository
 from data_quality_agent.tools import DataQualityTools, PlatformClient, ToolGateway, tools_for
 from data_quality_agent.tools.actions import ActionExecutor, RemediationActions
 from data_quality_agent.tools.catalog import ToolSpec
@@ -66,8 +68,11 @@ class AgentTeam:
     def __init__(
         self, model: Model | str, runs: RunRepository, platform: PlatformClient | None,
         run_id: str, on_step: AgentListener, *, executor: ActionExecutor | None = None,
+        session_id: str | None = None,
     ) -> None:
         self.model = model
+        self.session_id = session_id
+        self.telemetry = TelemetryRepository(runs.database)
         self.runs = runs
         self.platform = platform
         self.run_id = run_id
@@ -80,6 +85,12 @@ class AgentTeam:
         )
         self.gateways: dict[str, ToolGateway] = {}
         self.specialists = {role: self._build_specialist(role) for role in SPECIALISTS}
+
+    def _recorded_model(self, role: str) -> RecordedModel:
+        return RecordedModel(
+            self.model, self.telemetry, agent=role, run_id=lambda: self.run_id,
+            session_id=self.session_id,
+        )
 
     def _moved_to(self, result: dict[str, Any]) -> None:
         """An action created a new attempt: from now on every agent reads and acts on that one."""
@@ -96,7 +107,7 @@ class AgentTeam:
         self.gateways[role] = gateway
         observed = Observed()
         agent = Agent(
-            self.model, output_type=SpecialistReport, name=role,
+            self._recorded_model(role), output_type=SpecialistReport, name=role,
             instructions=f"{harness.INSTRUCTIONS}\n{COMMON_INSTRUCTIONS}",
             tools=self._bridge(gateway, observed), retries=2,
             model_settings={"timeout": REQUEST_TIMEOUT_SECONDS},
@@ -183,7 +194,7 @@ class AgentTeam:
             )
 
         agent = Agent(
-            self.model, output_type=OrchestrationResult, name="orchestrator",
+            self._recorded_model("orchestrator"), output_type=OrchestrationResult, name="orchestrator",
             instructions=orchestrator.INSTRUCTIONS, tools=[delegation(role) for role in SPECIALISTS],
             retries=2, model_settings={"timeout": REQUEST_TIMEOUT_SECONDS},
         )

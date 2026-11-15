@@ -267,8 +267,15 @@ Libertar ou descartar uma linha falhada segue outro fluxo: uma pessoa cria um
 pedido na interface e uma pessoa diferente decide. Ao aprovar, o serviço volta
 a verificar que a linha continua `held` e só altera a disposição na tabela
 `failed_records`; não carrega a linha no warehouse. A interface local não tem
-autenticação, por isso os nomes são apenas registo declarado, não prova de
-identidade. Alterações de regras ainda não são suportadas.
+autenticação: nomes e checkbox de confirmação são apenas declarações, não
+provas de identidade.
+
+A mesma interface permite pedir alteração limitada dos thresholds gerais:
+`minimum_count` entre 1 e 1000 ou `maximum_delay_minutes` entre 0 e 1440.
+Outro decisor aprova; a política volta a validar regra, intervalo e valor
+anterior. A alteração cria uma nova versão para execuções futuras e não
+reescreve as regras de tentativas já guardadas. Não é permitido alterar regras
+ao nível das linhas nem desligar regras.
 
 ### Passo 6 — Confirmar o resultado
 
@@ -291,6 +298,29 @@ O histórico de execuções já é lido de SQLite. A intervenção apresenta tam
 os passos dos agentes e as tools usadas. As investigações e as tentativas de
 correção do mesmo incidente ficam guardadas na base de controlo.
 
+A UI está organizada em Execuções, Avaliação e Observabilidade. Permite
+carregar/colar um lote próprio, corrigir incidentes, gerir os pedidos de
+aprovação previstos e consultar memória. Logs podem ser pesquisados e
+exportados por tentativa; avaliações têm histórico e logs por
+caso. Os pedidos aos modelos guardam tokens de entrada/saída, modelo utilizado
+e latência, sem custos monetários. Consumo desconhecido ou anterior à medição
+é assinalado, nunca inventado.
+
+Retry e quarentena criados pelos agentes aparecem como continuação do mesmo
+grafo, depois do bloco dos agentes, sem outra entrada no histórico. Logs,
+tokens e dados secundários podem ser abertos e fechados em secções próprias.
+Os IDs distintos continuam guardados para auditoria/idempotência; correções
+manuais mantêm as suas próprias entradas. Investigações partilhadas mantêm
+os seus passos e relatório na tentativa onde começaram.
+
+Na UI, a base de controlo é sempre `runs\pipelines.sqlite3`, relativa à pasta
+de execução, sem campo para escolher outra base.
+
+O histórico não tem filtros adicionais e os cartões são compactos. O botão
+**Clean** pede confirmação e limpa o controlo, o warehouse e os dados das
+avaliações da pasta, repondo também a sessão visual. Preserva os esquemas e
+os dados de origem/exemplos; deve ser usado sem execuções em curso.
+
 Se uma execução for interrompida, o sistema deverá conseguir retomá-la:
 recuperar o estado, verificar novamente as permissões e confirmar se uma ação
 já foi executada antes de tentar repeti-la.
@@ -308,9 +338,11 @@ já foi executada antes de tentar repeti-la.
 5. Os sub-agents consultam evidências e runbooks e devolvem os resultados ao
    orquestrador, que os junta e decide se há uma ação possível.
 6. Se houver, o orquestrador delega ao sub-agent de remediação a preparação de
-   um pedido de ação. A ação concreta e a necessidade de aprovação serão
-   definidas durante o desenvolvimento.
-7. O sistema verifica a permissão e pede aprovação humana, se for necessária.
+   um pedido de ação. Retry e quarentena são executados apenas quando a
+   política permitir; disposição de linhas e alterações de thresholds exigem
+   pedidos e decisão humana separados.
+7. O sistema verifica a permissão em código. Aprovação humana não substitui
+   essa autorização.
 8. Se a ação for autorizada, executa-a e volta a processar e verificar o lote.
 9. O orquestrador pede ao sub-agent revisor que avalie a nova evidência. Se
    os dados passarem as regras e o carregamento for confirmado, o incidente
@@ -319,20 +351,19 @@ já foi executada antes de tentar repeti-la.
 
 A investigação e a submissão manual de um lote corrigido já existem. Cada
 correção cria outra tentativa do mesmo incidente e repete o gate com as
-regras originais, sem repetir as falhas sintéticas. Ações autónomas e
-aprovações ainda não estão implementadas.
+regras originais, sem repetir as falhas sintéticas.
 
 ## 5. Como será desenvolvido?
 
 | Fase | O que vamos construir | Estado |
 |---|---|---|
 | 1. Fundação e simulador | Projeto UV, ingestão JSON, transformação, bloco de qualidade e carregamento SQLite. | **Implementação inicial disponível**, com ponto de intervenção pendente. |
-| 2. Persistência e avaliação | Guardar execuções, incidentes e contexto bloqueado; criar casos de avaliação reproduzíveis. | **Persistência disponível**; casos de avaliação por fazer. |
+| 2. Persistência e avaliação | Guardar execuções, incidentes e contexto bloqueado; criar casos de avaliação reproduzíveis. | **Persistência e casos versionados disponíveis**, com avaliação determinística e verificação opcional de trajetórias dos agentes. |
 | 3. Ferramentas e runbooks | Disponibilizar consultas, procedimentos e ações simuladas verificáveis. | **Consultas, runbooks e duas ações automáticas disponíveis.** |
 | 4. Agentes | Criar o orquestrador e os sub-agents especialistas com PydanticAI. | **Disponíveis**, com o harness em `harness/` (um ficheiro por agente), tools filtradas, outputs tipados e verificação de evidências. |
-| 5. Segurança e retoma | Aplicar permissões, aprovações, registo de decisões e recuperação após interrupções. | **Allowlist, políticas, aprovações de disposição e retoma idempotente disponíveis**; autenticação real por fazer. |
+| 5. Segurança e retoma | Aplicar permissões, aprovações, registo de decisões e recuperação após interrupções. | **Allowlist, políticas, aprovações de disposições/thresholds e retoma idempotente disponíveis**; autenticação real por fazer. |
 | 6. MCP e memória | Integrar ferramentas MCP locais e memória com origem e validade. | **Servidor MCP e memória por pipeline com proveniência/expiração disponíveis.** |
-| 7. Interface e avaliação completa | Interface Streamlit para iniciar, escolher cenários e ver logs e métricas; testar o fluxo de ponta a ponta. | **Interface e correções manuais disponíveis**; avaliação dos modelos por fazer. |
+| 7. Interface e avaliação completa | Interface Streamlit para iniciar, escolher cenários e ver logs e métricas; testar o fluxo de ponta a ponta. | **Interface e harness de avaliação disponíveis**; comparação ampla entre modelos e avaliação semântica do diagnóstico por fazer. |
 
 As fases serão validadas com testes à medida que forem construídas. A descrição
 mais técnica está na [proposta de arquitetura](proposta-arquitetura.md).
@@ -340,7 +371,7 @@ mais técnica está na [proposta de arquitetura](proposta-arquitetura.md).
 ## 6. O que já posso experimentar?
 
 Hoje é possível executar a pipeline pela linha de comandos ou pela interface
-Streamlit, receber um JSON local (no CLI) e acompanhar as etapas e os logs. Os
+Streamlit, receber um JSON local (no CLI ou na UI) e acompanhar as etapas e os logs. Os
 lotes aprovados são efetivamente guardados em SQLite. Os lotes com problemas
 ficam bloqueados, e todo o seu contexto fica na base local. As tools locais e
 o servidor MCP da plataforma da origem já deixam consultar esse contexto e os
@@ -353,8 +384,9 @@ pode repetir uma ingestão falhada quando a origem está disponível e pôr em
 quarentena poucos registos inválidos (até 5 %), entregando o resto; ambas as
 ações criam uma nova tentativa que volta a passar pelo gate. A interface
 também permite retomar ações ou investigações interrompidas e criar pedidos de
-aprovação de disposição de linhas. Durante a investigação, os especialistas
-consultam memória ativa da pipeline e podem guardar notas com evidência/validade.
+aprovação de disposição de linhas ou alteração dos thresholds permitidos.
+Durante a investigação, os especialistas consultam memória ativa da pipeline e
+podem guardar notas com evidência/validade.
 
 O projeto usa dados fictícios. Os agentes usam a configuração OpenAI do curso
 e estão desligados por omissão: ativá-los implica enviar ao fornecedor

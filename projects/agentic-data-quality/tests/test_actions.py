@@ -28,7 +28,7 @@ def test_migration_moves_legacy_quarantine_rows_to_failed_records(tmp_path: Path
         old_table = connection.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'quarantined_records'"
         ).fetchone()
-    assert migrated.schema_version == 7
+    assert migrated.schema_version == 9
     assert row["source_run_id"] == "old-run"
     assert row["record_json"] == '{"id":"failed"}'
     assert row["status"] == "held"
@@ -93,11 +93,13 @@ def test_failed_record_disposition_requires_distinct_human_approval(tmp_path: Pa
     [record] = service.actions.list_failed_records(run_id)[:1]
     approval_id = service.approvals.request(
         source_run_id=record.source_run_id, position=record.position, target_status="discarded",
-        reason="Reviewed and deemed unusable.", requested_by="analyst",
+        reason="Reviewed and deemed unusable.", requested_by="analyst", identity_attested=True,
     )
     with pytest.raises(PolicyDenied, match="different person"):
-        service.approvals.approve(approval_id, decided_by="analyst")
-    approved = service.approvals.approve(approval_id, decided_by="reviewer")
+        service.approvals.approve(approval_id, decided_by="analyst", identity_attested=True)
+    with pytest.raises(PolicyDenied, match="Confirm"):
+        service.approvals.approve(approval_id, decided_by="reviewer", identity_attested=False)
+    approved = service.approvals.approve(approval_id, decided_by="reviewer", identity_attested=True)
     assert (approved.status, approved.decided_by) == ("executed", "reviewer")
     updated = service.actions.list_failed_records(run_id)[0]
     assert updated.status == "discarded"
@@ -105,7 +107,7 @@ def test_failed_record_disposition_requires_distinct_human_approval(tmp_path: Pa
     second = service.actions.list_failed_records(run_id)[1]
     stale_approval = service.approvals.request(
         source_run_id=second.source_run_id, position=second.position, target_status="released",
-        reason="Review the row.", requested_by="analyst",
+        reason="Review the row.", requested_by="analyst", identity_attested=True,
     )
     with service.database.transaction() as connection:
         connection.execute(
@@ -114,7 +116,7 @@ def test_failed_record_disposition_requires_distinct_human_approval(tmp_path: Pa
             (second.source_run_id, second.position),
         )
     with pytest.raises(PolicyDenied, match="Only a held"):
-        service.approvals.approve(stale_approval, decided_by="reviewer")
+        service.approvals.approve(stale_approval, decided_by="reviewer", identity_attested=True)
 
 
 def test_interrupted_action_recovery_reuses_the_same_run_and_delivery(tmp_path: Path) -> None:

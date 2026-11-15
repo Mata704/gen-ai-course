@@ -215,6 +215,63 @@ MIGRATIONS: list[str] = [
     CREATE UNIQUE INDEX unique_incident_memory
         ON incident_memories (pipeline_id, source_ref, content);
     """,
+    # 8: explicit identity attestations and approvals for bounded rule-threshold changes.
+    """
+    ALTER TABLE failed_record_approvals ADD COLUMN requester_attested INTEGER NOT NULL DEFAULT 0
+        CHECK (requester_attested IN (0, 1));
+    ALTER TABLE failed_record_approvals ADD COLUMN decider_attested INTEGER NOT NULL DEFAULT 0
+        CHECK (decider_attested IN (0, 1));
+    CREATE TABLE pipeline_rule_approvals (
+        approval_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        incident_id TEXT NOT NULL REFERENCES incident_workflows (incident_id),
+        pipeline_id TEXT NOT NULL,
+        rule_id TEXT NOT NULL,
+        attribute TEXT NOT NULL CHECK (attribute IN ('minimum_count', 'maximum_delay_minutes')),
+        previous_value INTEGER NOT NULL,
+        proposed_value INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        requested_by TEXT NOT NULL,
+        requester_attested INTEGER NOT NULL CHECK (requester_attested IN (0, 1)),
+        decided_by TEXT,
+        decider_attested INTEGER NOT NULL DEFAULT 0 CHECK (decider_attested IN (0, 1)),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'executed', 'rejected')),
+        requested_at TEXT NOT NULL,
+        finished_at TEXT
+    );
+    CREATE UNIQUE INDEX one_pending_rule_change
+        ON pipeline_rule_approvals (incident_id, rule_id, attribute) WHERE status = 'pending';
+    CREATE TABLE pipeline_rule_overrides (
+        pipeline_id TEXT NOT NULL,
+        rule_id TEXT NOT NULL,
+        attribute TEXT NOT NULL CHECK (attribute IN ('minimum_count', 'maximum_delay_minutes')),
+        value INTEGER NOT NULL,
+        approval_id INTEGER NOT NULL REFERENCES pipeline_rule_approvals (approval_id),
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (pipeline_id, rule_id, attribute)
+    );
+    """,
+    # 9: request-level model telemetry and durable evaluation reports.
+    """
+    CREATE TABLE model_calls (
+        call_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT REFERENCES agent_sessions (session_id),
+        run_id TEXT NOT NULL REFERENCES pipeline_runs (run_id),
+        agent TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        duration_ms REAL NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('ok', 'error')),
+        input_tokens INTEGER,
+        output_tokens INTEGER
+    );
+    CREATE INDEX model_calls_by_run ON model_calls (run_id, call_id);
+    CREATE TABLE evaluation_reports (
+        evaluation_id TEXT PRIMARY KEY,
+        started_at TEXT NOT NULL,
+        report_json TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -242,6 +299,20 @@ class Database:
     def schema_version(self) -> int:
         with self.transaction() as connection:
             return connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+
+    def clear(self) -> None:
+        """Erase application data while preserving the migrated schema."""
+        with self.transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("PRAGMA defer_foreign_keys = ON")
+            tables = connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' "
+                "AND name NOT LIKE 'sqlite_%' AND name != 'schema_migrations'"
+            ).fetchall()
+            for table in tables:
+                name = table["name"].replace('"', '""')
+                connection.execute(f'DELETE FROM "{name}"')
+            connection.execute("DELETE FROM sqlite_sequence")
 
     def _migrate(self) -> None:
         with closing(sqlite3.connect(self.path, timeout=10)) as connection:

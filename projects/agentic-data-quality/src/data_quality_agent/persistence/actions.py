@@ -120,11 +120,14 @@ class ActionRepository:
                 (incident_id, action),
             ).fetchone()[0]
 
-    def list_actions(self, incident_id: str) -> list[IncidentAction]:
+    def list_actions(self, incident_id: str | None = None) -> list[IncidentAction]:
+        query = "SELECT * FROM incident_actions"
+        parameters: tuple[str, ...] = ()
+        if incident_id is not None:
+            query += " WHERE incident_id = ?"
+            parameters = (incident_id,)
         with self.database.transaction() as connection:
-            rows = connection.execute(
-                "SELECT * FROM incident_actions WHERE incident_id = ? ORDER BY action_id", (incident_id,),
-            ).fetchall()
+            rows = connection.execute(query + " ORDER BY action_id", parameters).fetchall()
         return [self._action(row) for row in rows]
 
     def list_failed_records(self, incident_id: str) -> list[FailedRecord]:

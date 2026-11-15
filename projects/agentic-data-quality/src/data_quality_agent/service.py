@@ -20,6 +20,7 @@ from data_quality_agent.persistence.approvals import ApprovalRepository
 from data_quality_agent.persistence.database import DEFAULT_DATABASE, Database
 from data_quality_agent.persistence.incidents import IncidentRepository
 from data_quality_agent.persistence.models import ActionName, IncidentState, IncidentWorkflow
+from data_quality_agent.persistence.rule_changes import RuleChangeRepository
 from data_quality_agent.persistence.repository import RunRepository
 from data_quality_agent.simulator.engine import (
     SCENARIOS_DIR,
@@ -28,6 +29,7 @@ from data_quality_agent.simulator.engine import (
     load_pipeline,
     load_scenario,
 )
+from data_quality_agent.simulator.destination import SQLiteDestination
 from data_quality_agent.simulator.models import (
     EventKind, FaultKind, LogLevel, PipelineDefinition, PipelineEvent, PipelineRun, PipelineStatus,
     Scenario, StageName, StageStatus,
@@ -49,29 +51,68 @@ class PipelineService:
         self.incidents = IncidentRepository(self.database)
         self.actions = ActionRepository(self.database)
         self.approvals = ApprovalRepository(self.database)
+        self.rule_changes = RuleChangeRepository(self.database)
         # By default the warehouse sits next to the control database (runs/warehouse.sqlite3).
         if warehouse_path is None:
             warehouse_path = self.database.path.parent / WAREHOUSE_FILENAME
         self.simulator = PipelineSimulator(warehouse_path=warehouse_path)
+
+    def clean(self) -> None:
+        """Reset this workspace, including retained evaluations, but never its source data."""
+        evaluation_root = self.database.path.resolve().parent / "evaluations"
+        case_databases: list[tuple[Path, Path]] = []
+        if evaluation_root.is_symlink():
+            raise ValueError("A pasta de avaliações não pode ser uma ligação simbólica.")
+        for evaluation in sorted(evaluation_root.glob("evaluation-*")):
+            if evaluation.is_symlink():
+                raise ValueError(f"A avaliação não pode ser uma ligação simbólica: {evaluation}")
+            if not evaluation.is_dir():
+                continue
+            for case in sorted(evaluation.iterdir()):
+                if case.is_symlink():
+                    raise ValueError(f"O caso não pode ser uma ligação simbólica: {case}")
+                if case.is_dir():
+                    case_databases.append((case / "control.sqlite3", case / WAREHOUSE_FILENAME))
+        paths = [
+            self.database.path, self.simulator.destination.path,
+            *(path for pair in case_databases for path in pair),
+        ]
+        for path in paths:
+            if path.is_symlink():
+                raise ValueError(f"A base a limpar não pode ser uma ligação simbólica: {path}")
+        # Keep the main history until all destinations and case databases have been cleared.
+        for control, warehouse in case_databases:
+            SQLiteDestination(warehouse).clear()
+            if control.is_file():
+                Database(control).clear()
+        self.simulator.destination.clear()
+        self.database.clear()
 
     def run(
         self,
         scenario: Scenario | str | Path,
         *,
         input_path: str | Path | None = None,
+        input_records: list[dict[str, Any]] | None = None,
         on_event: EventListener | None = None,
         agent_model: Model | str | None = None,
     ) -> PipelineRun:
         if isinstance(scenario, (str, Path)):
             scenario = load_scenario(scenario)
-        pipeline = load_pipeline(scenario.pipeline_id)
-        result = self._run(scenario, pipeline, input_path=input_path, on_event=on_event)
+        pipeline = self.current_pipeline(scenario.pipeline_id)
+        result = self._run(
+            scenario, pipeline, input_path=input_path, input_records=input_records, on_event=on_event,
+        )
         if result.incident is not None:
             self.incidents.register(result.run_id)
             if agent_model is not None:
                 self.analyze(result.run_id, agent_model, on_event=on_event)
                 return self._stored_run(result.run_id)
         return result
+
+    def current_pipeline(self, pipeline_id: str) -> PipelineDefinition:
+        """Bundled definition plus currently approved, bounded rule overrides."""
+        return self.rule_changes.apply_overrides(load_pipeline(pipeline_id))
 
     def _stored_run(self, run_id: str) -> PipelineRun:
         result = self.runs.get_run(run_id)
@@ -426,7 +467,9 @@ class PipelineService:
 
         async def investigate() -> tuple[OrchestrationResult, str]:
             async with PlatformClient() as platform:
-                team = AgentTeam(model, self.runs, platform, run_id, step, executor=self)
+                team = AgentTeam(
+                    model, self.runs, platform, run_id, step, executor=self, session_id=session_id,
+                )
                 outcome = await team.run(incident.incident_id, resume_context=resume_context)
                 return outcome, team.run_id
 

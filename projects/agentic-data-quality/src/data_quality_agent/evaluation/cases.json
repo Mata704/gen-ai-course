@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "scenario_id": "healthy-orders",
+      "scenario_file": "healthy.json",
+      "pipeline_status": "succeeded",
+      "quality_status": "pass",
+      "output_count": 40,
+      "required_findings": []
+    },
+    {
+      "scenario_id": "orders-source-unavailable",
+      "scenario_file": "source_unavailable.json",
+      "pipeline_status": "failed",
+      "quality_status": "not_run",
+      "output_count": 0,
+      "required_findings": [],
+      "agent": {
+        "incident_status": "resolved",
+        "expected_action": "retry_ingestion",
+        "output_count": 40,
+        "required_roles": ["diagnosis", "remediation", "reviewer"]
+      }
+    },
+    {
+      "scenario_id": "orders-schema-drift",
+      "scenario_file": "schema_drift.json",
+      "pipeline_status": "blocked",
+      "quality_status": "fail",
+      "output_count": 0,
+      "required_findings": ["expected-schema"],
+      "agent": {
+        "incident_status": "awaiting_correction",
+        "expected_action": null,
+        "output_count": 0,
+        "required_roles": ["quality", "remediation"]
+      }
+    },
+    {
+      "scenario_id": "orders-quality-issues",
+      "scenario_file": "quality_issues.json",
+      "pipeline_status": "blocked",
+      "quality_status": "fail",
+      "output_count": 0,
+      "required_findings": [
+        "required-customer",
+        "unique-order",
+        "valid-amount",
+        "valid-status",
+        "known-customer"
+      ],
+      "agent": {
+        "incident_status": "awaiting_correction",
+        "expected_action": null,
+        "output_count": 0,
+        "required_roles": ["quality", "remediation"]
+      }
+    },
+    {
+      "scenario_id": "orders-late-low-volume",
+      "scenario_file": "late_and_low_volume.json",
+      "pipeline_status": "blocked",
+      "quality_status": "fail",
+      "output_count": 0,
+      "required_findings": ["minimum-volume", "freshness"],
+      "agent": {
+        "incident_status": "awaiting_correction",
+        "expected_action": null,
+        "output_count": 0,
+        "required_roles": ["quality", "remediation"]
+      }
+    },
+    {
+      "scenario_id": "orders-few-invalid",
+      "scenario_file": "few_invalid_records.json",
+      "pipeline_status": "blocked",
+      "quality_status": "fail",
+      "output_count": 0,
+      "required_findings": ["valid-amount", "valid-status"],
+      "agent": {
+        "incident_status": "resolved",
+        "expected_action": "quarantine_failed_records",
+        "output_count": 38,
+        "required_roles": ["quality", "remediation", "reviewer"]
+      }
+    }
+  ]
+}

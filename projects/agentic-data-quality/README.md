@@ -36,6 +36,9 @@ principal do repositório nem o domínio da bolsa do Meridian.
   `persistence/actions.py` guarda as ações e os registos em quarentena.
 - `persistence/incidents.py` associa tentativas ao mesmo incidente e guarda
   as investigações dos agentes.
+- `evaluation/` contém casos de aceitação versionados e um executor que verifica
+  estados da pipeline, achados de qualidade e, opcionalmente, trajetórias dos
+  agentes.
 - `ui/app.py` liga a interface ao serviço; `ui/components.py` apresenta os
   resultados e `ui/view_model.py` prepara os estados e métricas.
 
@@ -223,7 +226,12 @@ bloco `remediation` da sua
   outra pessoa na interface. A política volta a validar que a linha continua
   `held`; a aprovação não autoriza por si só nem carrega a linha no warehouse.
   `Descartar` é uma disposição auditada, não uma eliminação física. A UI não
-  autentica pessoas: os nomes indicados não provam a identidade.
+  autentica pessoas: os nomes indicados e o checkbox de confirmação são
+  autorrelatados, não provam a identidade.
+- A UI também permite propor um novo limite para `minimum_count` (1–1000) ou
+  `maximum_delay_minutes` (0–1440). Um segundo decisor e a política em código
+  têm de aprovar a alteração; só esses limites podem ser alterados e a nova
+  versão aplica-se a execuções futuras, não às tentativas existentes.
 - Se o processo for interrompido durante uma ação, **Retomar ações
   interrompidas** reutiliza o mesmo `run_id` idempotente; só sessões sem
   atividade há pelo menos 10 minutos podem ser retomadas.
@@ -244,7 +252,7 @@ uv run --locked data-quality-sim --agents --scenario .\src\data_quality_agent\si
 O segundo tem 2 registos inválidos em 40 (5 %), por isso a quarentena é
 permitida; em `quality_issues.json` (5 em 41) é recusada.
 
-Alterar regras ainda não é uma ação disponível, mesmo com aprovação.
+Alterações a regras de linha ou a outros atributos continuam indisponíveis.
 ## Corrigir um lote no mesmo incidente
 
 1. Seleciona uma execução com incidente no histórico.
@@ -399,27 +407,106 @@ uv run --locked data-quality-ui
 ```
 
 Abre `http://localhost:8501` (só escuta em `localhost`). A interface serve para
-iniciar execuções, escolher o cenário e acompanhar logs e métricas; não
-contém regras de negócio.
+executar e acompanhar todos os fluxos existentes, sem transferir regras de
+negócio do serviço para a apresentação.
 
-- **Barra lateral:** cenário, destino SQLite, pausa visual por etapa e botão
-  **Executar pipeline**.
-- **Execução ao vivo**, ao estilo GitHub Actions: um grafo com as seis etapas
-  (⚪ em fila, 🟡 em execução, ✅ concluída, ❌ falhou, ⏭️ ignorada, ⏸️ a
-  aguardar agentes) e um bloco expansível por etapa com os seus logs.
-- **Execuções:** as 50 execuções mais recentes guardadas em SQLite, com
-  contagem por resultado; selecionar uma mostra métricas (registos recebidos e
-  carregados, regras falhadas, linhas afetadas, atraso e duração), regras que
-  falharam, incidente e dados do lote.
+- **Execuções:** exemplos incluídos ou lote próprio colado/carregado em JSON
+  (até 1 MB, sem falhas injetadas no modo próprio), histórico das execuções
+  principais, incluindo as que ainda não têm resultado final. Tentativas
+  automáticas de retry/quarentena não criam outra entrada: os seus blocos
+  continuam o grafo depois da intervenção do agente. Correções manuais
+  continuam a ser entradas independentes.
+- **Intervenção:** submissão de correções, investigação com agentes, retoma
+  de sessões/ações interrompidas, quarentena, pedidos e decisões de aprovação
+  de linhas e de thresholds. As mesmas políticas continuam a ser aplicadas.
+- **Agentes e tokens:** relatórios, passos, modelos/fornecedores usados,
+  tokens de entrada/saída, pedidos e erros, latência por pedido e p50/p95.
+  Valores da execução principal e secções expansíveis, fechadas por omissão,
+  por tentativa automática. Os totais gerais ficam em Observabilidade e
+  contam cada pedido uma só vez.
+- **Logs e auditoria:** timeline de pipeline, agentes e tools com pesquisa,
+  filtros de nível/origem e exportação JSON, com secções expansíveis por
+  tentativa automática. Mostra também bloqueios e latência das tools.
+- **Dados e regras / Memória:** consulta e exportação dos lotes, regras
+  históricas da execução e memória da pipeline com origem/validade, incluindo
+  a consulta de notas expiradas. A UI não escreve memória fora do fluxo do diagnóstico.
+  Dados e métricas das tentativas automáticas também ficam em secções expansíveis.
+- **Avaliação:** seleção de casos, execução determinística ou com agentes,
+  taxa de aprovação, esperado versus observado, duração, tokens e logs por
+  caso. Relatórios ficam na base de controlo; os SQLite dos casos ficam numa
+  subpasta `evaluations/`, separados dos dados operacionais.
+- **Observabilidade:** totais por modelo de todas as execuções da base de
+  controlo e acesso aos logs das execuções selecionadas. O consumo de avaliações
+  é apresentado na área de avaliação, não misturado com os totais operacionais.
 
-A pipeline demora milissegundos; a pausa visual (por omissão 0,8 s) só
-abranda a apresentação para se ver a etapa atual e entra nas durações
-mostradas. Pode ser posta a 0. O histórico vem de SQLite, por isso continua
-disponível depois de fechar o browser ou reiniciar a interface.
+O ID visível no histórico e no cabeçalho mantém-se o da execução principal;
+o estado apresentado acompanha a tentativa automática mais recente. Cada
+tentativa continua a ter um ID técnico próprio em SQLite para auditoria e
+idempotência, consultável nos detalhes. A seleção de um ID secundário antigo
+é encaminhada para a execução principal. As métricas/resultados iniciais
+podem ser abertos sem confundir uma falha inicial com a entrega posterior.
+Uma investigação pode atravessar várias tentativas: os pedidos ao modelo
+usam a tentativa capturada no início do pedido, enquanto o relatório e os
+passos da investigação mantêm a execução onde a sessão começou.
+
+Não são calculados custos monetários. Os tokens vêm do uso reportado pelo
+modelo (ou pelo modelo simulado em testes), não de uma estimativa do texto.
+Pedidos falhados sem uso reportado ficam com tokens desconhecidos (`N/D`);
+`≥` assinala totais parciais. Execuções anteriores à migração de telemetria não
+têm consumo recuperável. A latência mede o pedido completo, não o primeiro token.
+Não são guardados prompts/respostas na tabela de telemetria.
+
+Os controlos ficam diretamente na barra lateral, sem painel de configuração
+expansível nem pausa visual artificial. As métricas usam cartões compactos.
+A UI usa sempre `runs\pipelines.sqlite3` como base de controlo, relativo à
+pasta onde é iniciada; o warehouse fica em `runs\warehouse.sqlite3`. Para
+usar os mesmos ficheiros, inicia a UI a partir da pasta do projeto. O histórico
+sobrevive a reinícios. O CLI mantém a opção de escolher outra base.
+
+**Clean**, na barra lateral, pede confirmação antes de apagar os dados da base
+de controlo da UI (incluindo logs, agentes, telemetria, memória, aprovações,
+overrides e relatórios), as entregas do warehouse associado e os dados das bases
+dos casos em `evaluations/evaluation-*/`, na mesma pasta. Inclui avaliações sem
+relatório final guardado. Os esquemas SQLite são preservados, sem dados de execução.
+Depois da limpeza, a sessão visual volta a Execuções, com seleções, formulários e
+agentes repostos.
+Os cenários, lotes sintéticos e a origem MCP só de leitura nunca são alterados.
+Confirma apenas quando não houver execuções em curso; o reset entre ficheiros
+SQLite não é uma única transação e eventuais falhas são apresentadas na UI.
 
 O motor publica o progresso através de eventos (`stage_started`,
 `stage_finished` e `log`), passados a `PipelineSimulator.run(..., on_event=...)`
 e também guardados em `events` no resultado JSON do CLI.
+
+## Avaliação
+
+Executa os seis cenários versionados sem chamar modelos:
+
+```powershell
+uv run --locked data-quality-eval
+```
+
+O modo padrão verifica estados de pipeline e de qualidade, achados obrigatórios
+e quantidade entregue. Para avaliar também as decisões e a trajetória dos
+agentes, ativa o modelo configurado no `.env` ou no ambiente:
+
+```powershell
+uv run --locked data-quality-eval --agents
+uv run --locked data-quality-eval --agents --scenario orders-source-unavailable
+```
+
+O modo `--agents` verifica o estado esperado do incidente, os papéis que
+participaram, as ações executadas e a quantidade final entregue. Os critérios
+não avaliam a semântica do texto livre do diagnóstico: referências de evidência
+e contratos estruturados continuam a ser verificados pelo harness. Este modo
+faz chamadas ao modelo e pode ter custos; o nome configurado fica no relatório.
+Usa `--output .\runs\evaluation.json` para guardar o relatório JSON, e
+`--workdir .\runs\evaluation` para preservar as bases SQLite de cada caso.
+O comando termina com código 0 se todos os casos passarem, 1 se houver casos
+reprovados e 2 se a avaliação não puder ser executada.
+Os relatórios também incluem duração por caso e telemetria dos modelos, mesmo
+quando os SQLite temporários não são conservados. As avaliações iniciadas no
+CLI devolvem o relatório; as iniciadas na UI são guardadas no histórico da UI.
 
 ## Testes
 

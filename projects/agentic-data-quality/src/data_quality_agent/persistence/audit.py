@@ -41,12 +41,24 @@ class AuditRepository:
                 raise RuntimeError("The tool audit record has no identifier.")
             return cursor.lastrowid
 
-    def list_calls(self, *, run_id: str | None = None, limit: int = 100) -> list[ToolCall]:
-        query, params = "SELECT * FROM tool_calls", ()
+    def list_calls(
+        self, *, run_id: str | None = None, run_ids: list[str] | None = None, limit: int | None = 100,
+    ) -> list[ToolCall]:
+        if run_ids == []:
+            return []
+        query = "SELECT * FROM tool_calls"
+        params: list[Any] = []
         if run_id is not None:
-            query, params = query + " WHERE run_id = ?", (run_id,)
+            query, params = query + " WHERE run_id = ?", [run_id]
+        elif run_ids is not None:
+            query += " WHERE run_id IN (" + ", ".join("?" for _ in run_ids) + ")"
+            params = run_ids
+        query += " ORDER BY call_id"
+        if limit is not None:
+            query += " LIMIT ?"
+            params = [*params, limit]
         with self.database.transaction() as connection:
-            rows = connection.execute(query + " ORDER BY call_id LIMIT ?", (*params, limit)).fetchall()
+            rows = connection.execute(query, params).fetchall()
         return [
             ToolCall(
                 call_id=row["call_id"],

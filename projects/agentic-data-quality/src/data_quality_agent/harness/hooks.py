@@ -40,7 +40,8 @@ _NUMERIC_CONTEXT = re.compile(
 _NIF_CONTEXT = re.compile(r"(?i)\b(?:nif|tax[\s_-]*id|vat[\s_-]*(?:number|id))\b")
 _SENSITIVE_KEY = re.compile(
     r"(?i)(?:^|[_-])(?:email|e_mail|phone|telephone|mobile|tel|nif|tax_id|vat_id|iban|"
-    r"full_name|customer_name|contact_name|first_name|last_name)(?:$|[_-])"
+    r"customer_name|client_name|user_name|contact_name|first_name|last_name|full_name|"
+    r"given_name|family_name|nome_cliente|nome_completo|nome_contacto|nome_contato)(?:$|[_-])"
 )
 
 
@@ -157,7 +158,14 @@ def _is_identifier_key(key: str | None) -> bool:
 
 
 def _is_sensitive_key(key: str | None) -> bool:
-    return isinstance(key, str) and bool(_SENSITIVE_KEY.search(key))
+    if not isinstance(key, str):
+        return False
+    normalized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key).lower()
+    if normalized in {"name", "nome", "person_name", "full_name", "customer_name", "client_name", "user_name",
+                      "contact_name", "first_name", "last_name", "given_name", "family_name",
+                      "nome_cliente", "nome_completo", "nome_contacto", "nome_contato"}:
+        return True
+    return bool(_SENSITIVE_KEY.search(normalized))
 
 
 def _has_numeric_context(value: str, position: int) -> bool:

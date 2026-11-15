@@ -57,6 +57,9 @@ def test_successful_tool_results_redact_personal_data_recursively() -> None:
         "nested": [{"details": "Alternate email: support@example.org"}],
         "nif": "123456789",
         "customer_phone": "912345678",
+        "customerName": "Jane Doe",
+        "name": "Alex Smith",
+        "rule_name": "minimum-volume",
         "row_index": "123456789",
         "run_id": "12345678-1234-5678-9abc-123456789abc",
         "note": "Run ID: 12345678-1234-5678-9abc-123456789abc",
@@ -68,6 +71,9 @@ def test_successful_tool_results_redact_personal_data_recursively() -> None:
         "nested": [{"details": "Alternate email: [REDACTED]"}],
         "nif": "[REDACTED]",
         "customer_phone": "[REDACTED]",
+        "customerName": "[REDACTED]",
+        "name": "[REDACTED]",
+        "rule_name": "minimum-volume",
         "row_index": "123456789",
         "run_id": "12345678-1234-5678-9abc-123456789abc",
         "note": "Run ID: 12345678-1234-5678-9abc-123456789abc",
@@ -79,12 +85,14 @@ def test_personal_data_helper_detects_pii_without_flagging_identifiers() -> None
     assert contains_personal_data({"nested": ["name@example.com"]})
     assert contains_personal_data("Call +351 912 345 678")
     assert contains_personal_data("NIF: 123 456 789")
+    assert contains_personal_data({"customerName": "Jane Doe"})
     assert contains_personal_data({"tax_id": "123456789"})
     assert not contains_personal_data({
         "row_index": "123456789",
         "run_id": "12345678-1234-5678-9abc-123456789abc",
         "run_id_text": "Run ID: 12345678-1234-5678-9abc-123456789abc",
         "note": "The count is 123456789",
+        "rule_name": "minimum-volume",
     })
 
 

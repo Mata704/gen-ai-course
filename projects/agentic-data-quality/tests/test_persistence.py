@@ -6,12 +6,19 @@ from pathlib import Path
 import pytest
 
 from data_quality_agent.persistence import Database
+from data_quality_agent.evaluation import evaluate_cases
+from data_quality_agent.evaluation.storage import EvaluationRepository
+from data_quality_agent.mcp.platform import PLATFORM_DATABASE
+from data_quality_agent.persistence.audit import AuditRepository
 from data_quality_agent.persistence.database import MIGRATIONS
 from data_quality_agent.persistence.incidents import IncidentRepository
+from data_quality_agent.persistence.memory import MemoryRepository
+from data_quality_agent.persistence.models import ModelCall
 from data_quality_agent.persistence.repository import definition_version
+from data_quality_agent.persistence.telemetry import TelemetryRepository
 from data_quality_agent.service import PipelineService
 from data_quality_agent.simulator.destination import SQLiteDestination
-from data_quality_agent.simulator.engine import SCENARIOS_DIR, load_pipeline
+from data_quality_agent.simulator.engine import DATASETS_DIR, SCENARIOS_DIR, load_pipeline
 from data_quality_agent.simulator.models import StageName, StageStatus
 
 
@@ -123,3 +130,84 @@ def test_existing_incidents_get_a_stable_workflow_when_migrated(tmp_path: Path) 
     incident = IncidentRepository(Database(path)).get_for_run("old-run")
     assert incident.incident_id == incident.latest_run_id == "old-run"
     assert incident.status == "awaiting_correction"
+
+
+def test_clean_clears_all_workspace_data_but_preserves_sources_and_schema(service: PipelineService) -> None:
+    original = service.run(SCENARIOS_DIR / "few_invalid_records.json")
+    service.incidents.start_session("clean-test", original.run_id)
+    action = service.quarantine_failed_records(original.run_id, requested_by="remediation")
+    service.incidents.finish_session("clean-test", error="Stopped for review.")
+    record = service.actions.list_failed_records(original.run_id)[0]
+    service.approvals.request(
+        source_run_id=record.source_run_id, position=record.position, target_status="discarded",
+        reason="Review row", requested_by="analyst", identity_attested=True,
+    )
+    pipeline = service.current_pipeline("orders_daily")
+    rule_approval = service.rule_changes.request(
+        incident_id=original.run_id, pipeline=pipeline, rule_id="minimum-volume",
+        attribute="minimum_count", proposed_value=25, reason="Partial delivery",
+        requested_by="analyst", identity_attested=True,
+    )
+    service.rule_changes.approve(
+        rule_approval, pipeline=pipeline, decided_by="reviewer", identity_attested=True,
+    )
+    call_id = AuditRepository(service.database).record(
+        agent="diagnosis", tool="get_run", source="local", arguments={}, run_id=original.run_id,
+        outcome="ok", detail="Evidence", duration_ms=1,
+    )
+    MemoryRepository(service.database).add(
+        run_id=original.run_id, content="Review invalid amounts.", source_ref=f"tool:{call_id}",
+        created_by="diagnosis", valid_days=1,
+    )
+    TelemetryRepository(service.database).record(ModelCall(
+        session_id="clean-test", run_id=original.run_id, agent="diagnosis", model_name="test-model",
+        provider="test", started_at=original.events[0].timestamp, duration_ms=1, outcome="ok",
+        input_tokens=10, output_tokens=5,
+    ))
+    evaluation_root = service.database.path.parent / "evaluations"
+    saved = evaluate_cases(scenario_ids=["healthy-orders"], workdir=evaluation_root)
+    EvaluationRepository(service.database).save(saved)
+    orphan = evaluate_cases(scenario_ids=["healthy-orders"], workdir=evaluation_root)
+    controls = [service.database.path]
+    for report in (saved, orphan):
+        assert report.results[0].control_database is not None
+        controls.append(Path(report.results[0].control_database))
+    warehouses = [SQLiteDestination(path.parent / "warehouse.sqlite3") for path in controls]
+    assert warehouses[0].read(action["new_run_id"])
+    untouched = [
+        PLATFORM_DATABASE, DATASETS_DIR / "orders.json", SCENARIOS_DIR / "healthy.json",
+        service.database.path.parent / "unrelated.sqlite3", evaluation_root / "notes.txt",
+    ]
+    untouched[-2].write_bytes(b"Unrelated database placeholder")
+    untouched[-1].write_text("Keep this note.", encoding="utf-8")
+    snapshots = {path: path.read_bytes() for path in untouched}
+
+    service.clean()
+    service.clean()
+
+    for path in controls:
+        database = Database(path)
+        assert database.schema_version == len(MIGRATIONS)
+        with database.transaction() as connection:
+            tables = connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name != 'schema_migrations'"
+            ).fetchall()
+            for table in tables:
+                assert connection.execute(f'SELECT COUNT(*) FROM "{table["name"]}"').fetchone()[0] == 0
+            assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    for warehouse in warehouses:
+        with closing(sqlite3.connect(warehouse.path)) as connection:
+            assert connection.execute("SELECT COUNT(*) FROM pipeline_output").fetchone()[0] == 0
+    assert {path: path.read_bytes() for path in untouched} == snapshots
+    assert service.current_pipeline("orders_daily") == pipeline
+    restarted = PipelineService(service.database.path).run(SCENARIOS_DIR / "healthy.json")
+    assert restarted.pipeline_status == "succeeded"
+    assert [run.run_id for run in service.runs.list_runs()] == [restarted.run_id]
+
+
+def test_cleaning_an_unused_workspace_does_not_create_a_warehouse(service: PipelineService) -> None:
+    service.clean()
+
+    assert service.runs.list_runs() == []
+    assert not service.simulator.destination.path.exists()
+    assert not (service.database.path.parent / "evaluations").exists()

@@ -190,6 +190,7 @@ projects/agentic-data-quality/
 │   ├── domain/             # entidades, contratos e políticas
 │   ├── services/           # casos de uso e regras de negócio
 │   ├── harness/            # harness dos agentes: um ficheiro por agente, hooks, políticas e equipa PydanticAI
+│   ├── evaluation/         # casos versionados e avaliador de resultados/trajetórias
 │   ├── tools/              # interfaces e ferramentas permitidas
 │   ├── mcp/                # servidor MCP e dados da plataforma da origem (só leitura)
 │   ├── simulator/          # pipelines, dados sintéticos e cenários
@@ -382,10 +383,11 @@ registos do lote nem os logs que só descrevem a simulação. As referências de
 evidência dos outputs são validadas contra as tools efetivamente usadas; a
 resolução exige revisão independente e confirmação determinística. As ações
 de retry/quarentena são tools locais autorizadas por políticas em código.
-Decisões de libertar/descartar linhas exigem pedido e aprovação humana; a
-política é revalidada na execução. A interface local não autentica identidades,
-pelo que os nomes de solicitante/aprovador são apenas trilha de auditoria, não
-uma prova de identidade.
+Decisões de libertar/descartar linhas e ajustes limitados dos thresholds
+`minimum_count`/`maximum_delay_minutes` exigem pedido e aprovação humana; a
+política é revalidada na execução. A interface local regista uma confirmação
+checkbox e nomes distintos, mas não autentica identidades: não são prova de
+identidade.
 
 ## 11. Persistência e memória
 
@@ -401,6 +403,12 @@ versão de schema mantida por migrações explícitas. Tabelas iniciais proposta
 | `actions`, `approvals` | Intenção, chave idempotente, executor, efeito, decisão e referências de aprovação. |
 | `audit_events` | Sequência imutável de decisões e chamadas de ferramentas sem incluir segredos. |
 | `memories` | Conteúdo, tipo, assunto, origem, referência, autor, escopo, confiança, validade e correção/substituição. |
+
+A implementação inclui também `model_calls` (migração 9), com modelo,
+fornecedor, agente, sessão/tentativa, tokens de entrada/saída e latência por
+pedido, e `evaluation_reports`, com relatórios persistidos das avaliações da UI.
+Não são calculados preços nem guardados prompts nesta telemetria. Falhas sem
+uso reportado conservam contagens desconhecidas, em vez de zero.
 
 Memórias são factos auxiliares, não substituem o estado atual do pipeline. Cada
 registo tem proveniência, validade, escopo (por exemplo, equipa e pipeline),
@@ -436,11 +444,15 @@ em tempo real e um bloco de logs expansível por etapa.
 
 Implementado (módulo `src/data_quality_agent/ui/`):
 
-- seleção de cenário, destino SQLite e botão de execução;
+- seleção de cenário e botão de execução, com base de controlo e destino SQLite
+  predefinidos na UI;
 - acompanhamento ao vivo através dos eventos publicados pelo motor
   (`stage_started`, `stage_finished` e `log`);
 - histórico das execuções lido de SQLite, métricas do lote, regras falhadas,
   incidente e dados recebidos, transformados e carregados.
+- tentativas automáticas representadas no mesmo grafo e entrada de histórico,
+  após os agentes; logs, tokens e dados secundários em secções expansíveis,
+  preservando os IDs técnicos e a persistência de cada tentativa.
 
 Previsto, quando existirem: passos e logs dos agentes e das tools dentro da
 etapa de intervenção.

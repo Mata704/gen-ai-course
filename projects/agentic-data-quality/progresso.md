@@ -418,7 +418,9 @@ modelos reais com o conjunto de dados maior previsto para o final.
   falhadas, e memória por pipeline com proveniência de tool e validade.
 - A UI exige solicitante e decisor diferentes. A execução da decisão volta a
   verificar em código que a linha continua `held`; a aprovação não grava dados
-  no warehouse.
+  no warehouse. Há checkbox de confirmação, mas não autenticação real.
+- Alterações de regra aprovadas estão limitadas aos thresholds gerais de volume
+  (1–1000) e freshness (0–1440 min); ficam versionadas e só afetam runs futuros.
 - Ações persistem um `execution_run_id` determinístico. A UI pode retomar
   ações interrompidas após 10 minutos sem sessão ativa; execuções parciais
   reutilizam a mesma chave e limpam a entrega parcial antes do replay.
@@ -430,9 +432,121 @@ modelos reais com o conjunto de dados maior previsto para o final.
 
 ### Ainda por fazer
 
-Alteração de regras sujeita a aprovação, autenticação real de solicitantes e
-aprovadores, avaliação das respostas com modelos reais e validação mais ampla
-do filtro de dados pessoais.
+Autenticação real de solicitantes/aprovadores, comparação ampla de versões de
+modelos, avaliação semântica do diagnóstico, suporte a outros tipos de
+alteração de regras e validação mais ampla do filtro de dados pessoais.
+
+## 2026-11-15 — Harness de avaliação
+
+### Feito
+
+- Criado `evaluation/` com seis casos versionados que verificam estado da
+  pipeline e de qualidade, achados requeridos e quantidade de dados entregues.
+- `data-quality-eval` executa os casos sem API por omissão; `--agents` acrescenta
+  verificações do estado do incidente, dos papéis delegados, das ações e da
+  entrega final. `--scenario` filtra casos e o relatório JSON pode ser guardado.
+- Cada caso usa SQLite isolado; `--workdir` conserva as bases para inspeção.
+- A avaliação verifica contratos e trajetórias estruturadas, mas ainda não
+  atribui uma pontuação semântica ao texto livre do diagnóstico.
+
+### Validação
+
+- Testes determinísticos e execução integrada com um modelo scripted — passaram.
+
+## 2026-11-15 — Data Quality Studio e observabilidade
+
+### Feito
+
+- UI reorganizada em Execuções, Avaliação e Observabilidade, com filtros de
+  histórico, separadores por função e exportação de dados/logs/relatórios.
+- Execuções aceitam JSON próprio por upload ou texto (até 1 MB), sem injetar
+  falhas de exemplo. Correções, aprovações, quarentena, investigações e retoma
+  continuam a passar pelos serviços e políticas existentes.
+- Migração 9 guarda metadados de cada pedido ao modelo, incluindo tentativas
+  de validação, falhas e mudanças de tentativa do incidente: modelo/fornecedor,
+  agente, tokens input/output reportados e latência. Não existem custos monetários.
+- Métricas p50/p95 e contagens de erros/bloqueios, histórico de investigações
+  e consulta de memória com proveniência/validade; valores desconhecidos não
+  são apresentados como consumo zero.
+- Avaliações podem ser executadas pela UI, guardam o relatório na base de
+  controlo e preservam SQLite isolado por caso para consulta posterior dos
+  logs e das ações. Os relatórios incluem telemetria mesmo sem esses ficheiros.
+
+### Validação
+
+- 97 testes passaram, incluindo consumo exato por pedido sem duplicação entre
+  tentativas, falhas com tokens desconhecidos, aprovações, correções, lotes
+  próprios, histórico de avaliações e consulta de execuções sem resultado final.
+- Validação em Edge headless: execução e avaliação pela UI, métricas com
+  modelo simulado, upload JSON real, pesquisa/exportação de logs e viewport móvel.
+  O upload e a submissão são agrupados num formulário para evitar uma execução
+  prematura enquanto o ficheiro ainda está a ser carregado.
+- Compilação, verificação do lock e build concluídos; módulos e dados de
+  avaliação confirmados no wheel.
+
+## 2026-11-15 — Limpeza do workspace e UI compacta
+
+### Feito
+
+- Removidos os controlos de pesquisa, estado e limite do histórico, o dropdown
+  de configuração e a pausa visual por etapa. A configuração restante fica
+  diretamente na barra lateral.
+- Cartões de métricas com valores e espaçamento menores, preservando duas
+  linhas no resumo para manter os rótulos legíveis.
+- Botão **Clean** com confirmação e cancelamento: limpa os dados do controlo,
+  entregas do warehouse e dados dos casos de avaliação, incluindo casos sem
+  relatório final. Remove também logs, telemetria, memória e overrides.
+- A UI volta ao estado inicial, mantendo apenas o caminho da base; exemplos,
+  origem MCP e esquemas SQLite são preservados. Falhas de limpeza são explícitas.
+
+### Validação
+
+- 101 testes passaram. Os novos casos verificam limpeza de todas as tabelas,
+  avaliações guardadas e sem relatório final, preservação da origem e dos
+  exemplos, confirmação/cancelamento, erros explícitos e nova execução após reset.
+- Edge headless validou confirmação, cancelamento, limpeza e reinício pela UI.
+  Cartões medidos com cerca de 70 px de altura e valores de 21,6 px, sem corte
+  dos valores em desktop; viewport móvel de 390 px sem overflow horizontal.
+- Compilação e build concluídos.
+
+## 2026-11-15 — Base de controlo fixa na UI
+
+### Feito e validação
+
+- Removido o campo da base de controlo. A UI usa a base predefinida
+  `runs\pipelines.sqlite3`, relativa à pasta de execução; o CLI mantém a sua
+  opção de escolher outra base.
+- O Clean limpa a mesma base predefinida, sem usar caminhos antigos guardados
+  na sessão. Testes isolados confirmaram execução, histórico, limpeza e
+  preservação de outra base; 26 testes passaram.
+- No navegador, uma execução foi gravada nas bases temporárias predefinidas,
+  e o Clean removeu os dados da execução e do warehouse.
+
+## 2026-11-15 — Tentativas automáticas no mesmo fluxo visual
+
+### Feito
+
+- Retry/quarentena deixam de criar entradas adicionais no histórico. A UI
+  agrupa os IDs técnicos pela relação de ação persistida e mantém a seleção
+  na execução principal, incluindo seleções antigas de IDs secundários.
+- O grafo coloca os blocos secundários depois da intervenção do agente.
+  Tentativas encadeadas e ainda sem resultado final continuam no mesmo fluxo.
+- Logs, tokens/agentes e dados/métricas secundários têm secções expansíveis,
+  fechadas por omissão. Observabilidade mantém totais sem dupla contagem.
+- Não foram alteradas as ações, permissões, IDs SQLite ou entregas. Correções
+  manuais continuam independentes; relatórios/passos de uma investigação
+  partilhada mantêm a tentativa onde a sessão começou.
+
+### Validação
+
+- 105 testes passaram, incluindo quarentena com agentes simulados, tentativas
+  encadeadas, em execução e falhadas, seleção antiga e separação da telemetria.
+- Edge headless confirmou uma entrada no histórico, blocos secundários inline,
+  expansão/ocultação/reabertura dos tokens e logs, dados secundários expansíveis
+  e totais de tokens iguais aos persistidos, sem duplicação.
+- Viewport móvel de 390 px sem overflow horizontal. A verificação final usou
+  bases temporárias isoladas e acesso à OpenAI desativado nesse processo.
+- Compilação, build e verificação de whitespace concluídos.
 
 ## Próximos registos
 

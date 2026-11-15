@@ -81,12 +81,22 @@ class MemoryRepository:
         return IncidentMemory.model_validate(dict(row))
 
     def active_for_pipeline(self, pipeline_id: str, *, limit: int = 5) -> list[IncidentMemory]:
+        return self.list_for_pipeline(pipeline_id, active_only=True, limit=limit)
+
+    def list_for_pipeline(
+        self, pipeline_id: str, *, active_only: bool = False, limit: int | None = None,
+    ) -> list[IncidentMemory]:
+        query = "SELECT * FROM incident_memories WHERE pipeline_id = ?"
+        params: list[str | int] = [pipeline_id]
+        if active_only:
+            query += " AND valid_until > ?"
+            params.append(_now().isoformat())
+        query += " ORDER BY created_at DESC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
         with self.database.transaction() as connection:
-            rows = connection.execute(
-                "SELECT * FROM incident_memories WHERE pipeline_id = ? AND valid_until > ? "
-                "ORDER BY created_at DESC LIMIT ?",
-                (pipeline_id, _now().isoformat(), limit),
-            ).fetchall()
+            rows = connection.execute(query, params).fetchall()
         return [IncidentMemory.model_validate(dict(row)) for row in rows]
 
     @staticmethod

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
+from data_quality_agent.persistence.models import IncidentAction, RunState, RunSummary
 from data_quality_agent.simulator.models import (
     EventKind,
     PipelineEvent,
@@ -132,6 +133,60 @@ class RunTracker:
         if len(self.events) < 2:
             return 0.0
         return (self.events[-1].timestamp - self.events[0].timestamp).total_seconds()
+
+
+@dataclass(frozen=True)
+class RunGroup:
+    primary: RunSummary
+    secondary: list[RunSummary] = field(default_factory=list)
+
+    @property
+    def latest(self) -> RunSummary:
+        return self.secondary[-1] if self.secondary else self.primary
+
+    @property
+    def status(self) -> RunState:
+        return self.latest.status
+
+    @property
+    def run_ids(self) -> list[str]:
+        return [self.primary.run_id, *(run.run_id for run in self.secondary)]
+
+
+def group_runs(summaries: list[RunSummary], actions: list[IncidentAction]) -> list[RunGroup]:
+    """Only automatic attempts share a history item; manual corrections remain independent."""
+    by_id = {summary.run_id: summary for summary in summaries}
+    parents: dict[str, str] = {}
+    for action in actions:
+        child = action.result_run_id or action.execution_run_id
+        if child is None or child not in by_id:
+            continue
+        if action.source_run_id not in by_id:
+            raise ValueError("Uma tentativa automática não tem a execução de origem.")
+        if child in parents and parents[child] != action.source_run_id:
+            raise ValueError("Uma tentativa automática tem mais de uma execução de origem.")
+        parents[child] = action.source_run_id
+    grouped: dict[str, list[RunSummary]] = {}
+    for summary in summaries:
+        root = summary.run_id
+        visited: set[str] = set()
+        while root in parents:
+            if root in visited:
+                raise ValueError("As tentativas automáticas contêm uma ligação circular.")
+            visited.add(root)
+            root = parents[root]
+        grouped.setdefault(root, []).append(summary)
+    groups = [
+        RunGroup(
+            primary=by_id[root],
+            secondary=sorted(
+                (summary for summary in runs if summary.run_id != root),
+                key=lambda summary: summary.started_at,
+            ),
+        )
+        for root, runs in grouped.items()
+    ]
+    return sorted(groups, key=lambda group: group.latest.started_at, reverse=True)
 
 
 @dataclass(frozen=True)

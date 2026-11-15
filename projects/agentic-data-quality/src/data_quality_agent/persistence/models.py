@@ -72,6 +72,20 @@ class AgentStep(BaseModel):
     message: str
 
 
+class ModelCall(BaseModel):
+    call_id: int | None = None
+    session_id: str | None
+    run_id: str
+    agent: str
+    model_name: str
+    provider: str
+    started_at: datetime
+    duration_ms: float
+    outcome: Literal["ok", "error"]
+    input_tokens: int | None
+    output_tokens: int | None
+
+
 ActionName = Literal["retry_ingestion", "quarantine_failed_records"]
 
 
@@ -108,7 +122,30 @@ class FailedRecordApproval(BaseModel):
     target_status: Literal["released", "discarded"]
     reason: str
     requested_by: str
+    requester_attested: bool
     decided_by: str | None
+    decider_attested: bool
+    status: Literal["pending", "executed", "rejected"]
+    requested_at: datetime
+    finished_at: datetime | None
+
+
+RuleThreshold = Literal["minimum_count", "maximum_delay_minutes"]
+
+
+class PipelineRuleApproval(BaseModel):
+    approval_id: int
+    incident_id: str
+    pipeline_id: str
+    rule_id: str
+    attribute: RuleThreshold
+    previous_value: int
+    proposed_value: int
+    reason: str
+    requested_by: str
+    requester_attested: bool
+    decided_by: str | None
+    decider_attested: bool
     status: Literal["pending", "executed", "rejected"]
     requested_at: datetime
     finished_at: datetime | None
