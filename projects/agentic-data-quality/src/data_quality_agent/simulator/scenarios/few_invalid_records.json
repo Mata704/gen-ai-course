@@ -1,0 +1,10 @@
+{
+  "scenario_id": "orders-few-invalid",
+  "description": "Two isolated invalid records in an otherwise valid batch (within the quarantine limit).",
+  "pipeline_id": "orders_daily",
+  "seed": 61,
+  "faults": [
+    {"kind": "set_value", "row_index": 7, "field": "amount", "value": -5.0},
+    {"kind": "set_value", "row_index": 12, "field": "status", "value": "pending_review"}
+  ]
+}

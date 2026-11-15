@@ -148,16 +148,18 @@ sequenceDiagram
 | Depois da tool | Depois de cada chamada | Regista a chamada para auditoria e passa o resultado pelos guardrails (por exemplo, dados pessoais ou instruções escondidas no texto vindo da plataforma da origem). |
 | Fim da execução | Antes da resposta final | A conclusão tem evidência de tools? Uma recuperação só é aceite se a revalidação a confirmar. |
 
-Cada sub-agent só tem acesso às tools de que precisa, locais e MCP. **As tools
-de consulta já existem**; as de ação ainda não.
+Cada sub-agent só tem acesso às tools de que precisa, locais e MCP, definidas
+na lista `TOOLS` do seu ficheiro em `harness/`. **As tools de consulta e as duas
+ações automáticas já existem.** Nenhuma tool devolve os registos do lote aos
+agentes: só regras, contagens, posições de linhas, perfis e logs.
 
 | Sub-agent | Tools locais (o que aconteceu na pipeline) | Tools MCP (o que diz a origem) | Estado |
 |---|---|---|---|
-| Qualidade dos dados | Regras, resultados das regras, registos afetados, métricas do lote e runbook. | Contrato do dataset, alterações de esquema e cadastro de clientes. | Disponível |
+| Qualidade dos dados | Regras, resultados das regras (com posições das linhas), perfil do lote e runbook. | Contrato do dataset e alterações de esquema. | Disponível |
 | Diagnóstico da pipeline | Resumo e logs da execução, execuções recentes, comparação com o último sucesso, incidente e runbook. | Contrato, alterações de esquema, estado da origem e incidentes da origem. | Disponível |
-| Remediação | Incidente e runbook; mais tarde, pedir ações como repetir a leitura ou reprocessar um lote. | Estado da origem e incidentes da origem. | Consultas disponíveis; ações por fazer |
+| Remediação | Incidente e runbook; ações `retry_ingestion` (repetir a leitura) e `quarantine_failed_records` (reter poucos registos inválidos e entregar o resto). | Estado da origem e incidentes da origem. | Disponível; a política das ações é verificada em código |
 | Revisor | Resultados das regras, resumo da execução e estado do destino. | Contrato do dataset. | Disponível |
-| Orquestrador | Nenhuma tool de dados; recebe um resumo curto do incidente e delega. | — | Resumo disponível |
+| Orquestrador | Nenhuma tool de dados; recebe um resumo curto do incidente e delega. | — | Disponível |
 
 Uma falha na pipeline ou numa ferramenta também deve ser apresentada como tal.
 Se o sistema não conseguir confirmar o resultado, não deve dizer que o problema
@@ -232,8 +234,8 @@ da pipeline ou ler um runbook. Um **runbook** é um procedimento documentado que
 sugere como investigar ou tratar um problema.
 
 - **Tools locais:** funções do projeto que só leem a base local e devolvem
-  pouca informação de cada vez (regras, registos afetados, métricas, logs,
-  estado das etapas), com referências para a evidência usada.
+  pouca informação de cada vez (regras, posições das linhas afetadas, métricas,
+  logs, estado das etapas), com referências para a evidência usada.
 - **Runbooks:** ficheiros versionados com sinais, investigação, causas e
   remediações possíveis, associados a cada tipo de regra.
 - **Servidor MCP:** representa a plataforma da equipa que envia os dados, um
@@ -330,9 +332,9 @@ aprovações ainda não estão implementadas.
 |---|---|---|
 | 1. Fundação e simulador | Projeto UV, ingestão JSON, transformação, bloco de qualidade e carregamento SQLite. | **Implementação inicial disponível**, com ponto de intervenção pendente. |
 | 2. Persistência e avaliação | Guardar execuções, incidentes e contexto bloqueado; criar casos de avaliação reproduzíveis. | **Persistência disponível**; casos de avaliação por fazer. |
-| 3. Ferramentas e runbooks | Disponibilizar consultas, procedimentos e ações simuladas verificáveis. | **Consultas e runbooks disponíveis**; ações por fazer. |
-| 4. Agentes | Criar o orquestrador e os sub-agents especialistas com PydanticAI. | **Disponíveis**, com tools filtradas, outputs tipados e verificação de evidências. |
-| 5. Segurança e retoma | Aplicar permissões, aprovações, registo de decisões e recuperação após interrupções. | Allowlist por agente, limite de chamadas e auditoria disponíveis; aprovações e retoma por fazer. |
+| 3. Ferramentas e runbooks | Disponibilizar consultas, procedimentos e ações simuladas verificáveis. | **Consultas, runbooks e duas ações automáticas disponíveis.** |
+| 4. Agentes | Criar o orquestrador e os sub-agents especialistas com PydanticAI. | **Disponíveis**, com o harness em `harness/` (um ficheiro por agente), tools filtradas, outputs tipados e verificação de evidências. |
+| 5. Segurança e retoma | Aplicar permissões, aprovações, registo de decisões e recuperação após interrupções. | Allowlist por agente, limite de chamadas, políticas das ações em código e auditoria disponíveis; aprovações e retoma por fazer. |
 | 6. MCP e memória | Integrar ferramentas MCP locais e memória com origem e validade. | **Servidor MCP da plataforma da origem disponível**; memória por fazer. |
 | 7. Interface e avaliação completa | Interface Streamlit para iniciar, escolher cenários e ver logs e métricas; testar o fluxo de ponta a ponta. | **Interface e correções manuais disponíveis**; avaliação dos modelos por fazer. |
 
@@ -350,10 +352,11 @@ dados externos.
 
 As instruções de instalação, execução e teste estão no [README](README.md).
 Já existem os agentes, a investigação de incidentes e a submissão de
-correções no frontend, com ficheiro ou texto JSON. Ainda não existem ações
-autónomas, aprovações ou retoma após interrupção. A etapa de revalidação após
-uma ação autónoma continua reservada; a correção manual repete o gate numa
-nova tentativa.
+correções no frontend, com ficheiro ou texto JSON. O agente de remediação já
+pode repetir uma ingestão falhada quando a origem está disponível e pôr em
+quarentena poucos registos inválidos (até 5 %), entregando o resto; ambas as
+ações criam uma nova tentativa que volta a passar pelo gate. Ainda não existem
+ações com aprovação humana nem retoma após interrupção.
 
 O projeto usa dados fictícios. Os agentes usam a configuração OpenAI do curso
 e estão desligados por omissão: ativá-los implica enviar ao fornecedor

@@ -26,8 +26,14 @@ principal do repositório nem o domínio da bolsa do Meridian.
   devolvidos pelos repositórios.
 - `tools/` contém as tools locais, o cliente MCP e o gateway; `mcp/` contém
   o servidor e a plataforma de origem simulada.
-- `agents/` contém os contratos Pydantic, as instruções, a integração das
-  tools e a equipa coordenada pelo orquestrador.
+- `harness/` é o **harness dos agentes**, organizado como nos exercícios do
+  curso (`starter/harness.py`): um ficheiro por agente com as instruções
+  (`INSTRUCTIONS`), as tools (`TOOLS`) e as verificações do output em código.
+  `specialists.py` tem o formato do relatório comum, `hooks.py` os hooks antes e
+  depois de cada tool, `policies.py` quando uma ação automática pode correr,
+  `model.py` o modelo e os limites, e `team.py` apenas liga as peças.
+- `tools/actions.py` expõe as duas ações automáticas e
+  `persistence/actions.py` guarda as ações e os registos em quarentena.
 - `persistence/incidents.py` associa tentativas ao mesmo incidente e guarda
   as investigações dos agentes.
 - `ui/app.py` liga a interface ao serviço; `ui/components.py` apresenta os
@@ -52,8 +58,9 @@ uv run --locked data-quality-sim --input .\src\data_quality_agent\simulator\data
 dados aprovados; sem `--warehouse`, o destino fica ao lado da base de controlo.
 
 O ficheiro de entrada deve ser uma lista JSON de objetos com as colunas
-`order_id`, `customer_id`, `amount` e `status`. A pipeline de demonstração exige
-pelo menos quatro registos, valores permitidos e clientes de referência
+`order_id`, `customer_id`, `amount` e `status`. A pipeline de demonstração
+recebe cerca de 40 encomendas por dia e exige pelo menos 30 registos, valores
+permitidos e clientes de referência
 definidos na sua
 [configuração de regras](src/data_quality_agent/simulator/definitions/orders_daily.json).
 Usa apenas dados fictícios nesta fase.
@@ -126,10 +133,10 @@ O CLI devolve código 0 quando conclui a simulação, mesmo que o cenário resul
 em bloqueio ou falha. Consulta `pipeline_status` no JSON. Código 2 indica erro
 de argumentos, entrada/configuração inválida ou falha da investigação dos agentes.
 
-**Ainda por implementar:** ações autónomas controladas, autorização e
-aprovações humanas, retoma após interrupção e memória. A correção manual já
-reexecuta o gate numa nova tentativa; a etapa específica de revalidação após
-uma ação autónoma continua reservada.
+**Ainda por implementar:** ações que exijam aprovação humana, retoma após
+interrupção e memória. A correção manual e as duas ações automáticas
+(ver [Ações automáticas](#ações-automáticas)) reexecutam o gate numa nova
+tentativa do mesmo incidente.
 
 ## Agentes PydanticAI
 
@@ -145,15 +152,19 @@ uv run --locked data-quality-sim --agents --scenario .\src\data_quality_agent\si
 No Streamlit, ativa **Investigar incidentes com agentes (OpenAI)** antes de
 executar, ou usa **Investigar com agentes** num incidente existente. A opção
 está desligada por omissão para continuar a permitir simulações sem API.
-As chamadas enviam ao OpenAI o contexto e os dados selecionados pelas tools;
-usa apenas os dados sintéticos do projeto. Não se efetuam chamadas reais nos
-testes.
+As chamadas enviam ao OpenAI o resumo do incidente e os resultados das tools:
+regras, contagens, posições de linhas, perfis de colunas, logs e informação
+da plataforma da origem. **Os registos do lote nunca são enviados aos
+agentes.** Usa apenas os dados sintéticos do projeto. Não se efetuam chamadas
+reais nos testes.
 
 - O **orquestrador** só tem tools de delegação. Decide quem consultar e pode
   pedir investigações independentes em paralelo.
 - **Qualidade** e **diagnóstico** investigam com as respetivas tools.
-- **Remediação** recomenda o próximo passo; não altera dados nem regras.
-- O **revisor** consulta a qualidade e a entrega da tentativa corrigida.
+- **Remediação** escolhe o próximo passo e pode pedir uma das duas ações
+  automáticas (ver abaixo); não altera regras nem escreve na origem.
+- O **revisor** consulta a qualidade e a entrega da tentativa mais recente
+  (corrigida ou criada por uma ação).
 - As tools MCP chegam ao modelo com a descrição em texto e o esquema de
   parâmetros aprovados pelo lock, não com a hash. A execução continua a
   passar pelo gateway.
@@ -165,6 +176,63 @@ Falhas ficam explícitas na investigação guardada, sem se converterem em
 sucesso. O relatório completo e os passos dos agentes são guardados na base
 de controlo e apresentados no frontend.
 
+### Onde está cada parte do harness
+
+| Ficheiro (`src/data_quality_agent/harness/`) | O que define |
+|---|---|
+| `orchestrator.py` | instruções do orquestrador, `OrchestrationResult`, limites de delegação e `check_outcome` |
+| `quality.py`, `diagnosis.py` | instruções e tools de cada especialista |
+| `remediation.py` | instruções, tools e as duas ações (`ACTIONS`) |
+| `reviewer.py` | instruções, tools e o critério de recuperação em código (`recovery_verified`) |
+| `specialists.py` | instruções comuns, `SpecialistReport` e `check_report` |
+| `hooks.py` | `before_tool` / `after_tool` (allowlist, orçamento, pinning MCP, tamanho, confiança) |
+| `policies.py` | `check_retry` e `plan_quarantine` |
+| `model.py` | modelo OpenAI e limites de pedidos, tools e tempo |
+| `team.py` | liga as peças ao PydanticAI; não é preciso editá-lo para mudar o comportamento |
+
+O catálogo de tools (`tools/catalog.py`) lê as permissões de cada agente da
+lista `TOOLS` do seu ficheiro e recusa arrancar se um ficheiro listar uma
+tool que não existe.
+
+## Ações automáticas
+
+O agente de remediação pode pedir duas ações de baixo risco. A política é
+verificada **em código** (`harness/policies.py`) com factos guardados, antes
+de qualquer execução; o modelo apenas pede. Cada pipeline ativa as ações no
+bloco `remediation` da sua
+[definição](src/data_quality_agent/simulator/definitions/orders_daily.json).
+
+| Ação | Quando é permitida | O que faz |
+|---|---|---|
+| `retry_ingestion` | incidente `pipeline_failure`; a plataforma da origem (MCP) reporta a origem como `operational` ou `degraded`; ainda há tentativas no orçamento (`max_automatic_retries`) | volta a ler a origem numa nova tentativa do mesmo incidente |
+| `quarantine_failed_records` | lote bloqueado só por regras ao nível da linha (não `minimum_rows` nem `freshness`) e registos falhados ≤ `max_quarantine_fraction` (5 %) | retém os registos falhados e processa os restantes numa nova tentativa, que volta a passar por todas as regras |
+
+- O estado da origem para o retry é lido pelo código na plataforma MCP; não é
+  o agente que o indica.
+- Cada ação corre no máximo uma vez por tentativa (índice único na base), só
+  durante uma investigação e só sobre a tentativa mais recente.
+- Uma ação recusada pela política fica no audit como `blocked`, com o motivo,
+  e o agente recebe esse motivo.
+- O resultado devolve ao agente apenas o novo `run_id`, os estados e as
+  contagens. A equipa passa a trabalhar sobre a nova tentativa e o revisor
+  verifica-a; `resolved` continua a exigir a verificação em código.
+- Os registos falhados ficam em `failed_records`, separados do warehouse, com
+  estados `held`, `released` ou `discarded` (inicialmente `held`); aparecem no
+  frontend, na secção **Ações automáticas**, apenas para revisão humana. A
+  alteração desses estados ainda não tem fluxo na interface.
+
+Cenários de demonstração:
+
+```powershell
+uv run --locked data-quality-sim --agents --scenario .\src\data_quality_agent\simulator\scenarios\source_unavailable.json
+uv run --locked data-quality-sim --agents --scenario .\src\data_quality_agent\simulator\scenarios\few_invalid_records.json
+```
+
+O segundo tem 2 registos inválidos em 40 (5 %), por isso a quarentena é
+permitida; em `quality_issues.json` (5 em 41) é recusada.
+
+Ainda não existem ações que exijam aprovação humana (por exemplo, alterar uma
+regra) nem a retoma automática de uma ação interrompida a meio.
 ## Corrigir um lote no mesmo incidente
 
 1. Seleciona uma execução com incidente no histórico.
@@ -257,32 +325,34 @@ consultar na plataforma.
 
 Os agentes nunca acedem diretamente a nenhuma das bases. Usam **tools** de
 leitura que devolvem vistas pequenas e filtradas. As tools locais incluem
-referências de evidência (`log:`, `finding:`, `record:`, `incident:`,
-`runbook:`) e nunca revelam o cenário escolhido nem as linhas de log que só
+referências de evidência (`log:`, `finding:`, `incident:`, `runbook:`,
+`action:`) e nunca revelam o cenário escolhido nem as linhas de log que só
 existem para descrever a simulação; a interface marca essas linhas com
 `[simulador]`.
 
 | Sub-agent | Tools locais (base local) | Tools MCP (plataforma da origem) |
 |---|---|---|
-| `quality` | `list_quality_rules`, `get_quality_findings`, `get_affected_records`, `get_batch_profile`, `find_runbook` | `get_dataset_contract`, `list_schema_changes`, `lookup_customers` |
+| `quality` | `list_quality_rules`, `get_quality_findings`, `get_batch_profile`, `find_runbook` | `get_dataset_contract`, `list_schema_changes` |
 | `diagnosis` | `get_run_summary`, `get_run_logs`, `list_recent_runs`, `compare_with_last_success`, `get_incident`, `find_runbook` | `get_dataset_contract`, `list_schema_changes`, `get_source_status`, `list_upstream_incidents` |
-| `remediation` | `get_incident`, `find_runbook` | `get_source_status`, `list_upstream_incidents` |
+| `remediation` | `get_incident`, `find_runbook`; ações `retry_ingestion` e `quarantine_failed_records` | `get_source_status`, `list_upstream_incidents` |
 | `reviewer` | `get_quality_findings`, `get_run_summary`, `get_delivery_status` | `get_dataset_contract` |
 
 O orquestrador não tem tools: recebe só um resumo inicial do incidente
 (`context.incident_brief`) e delega aos sub-agents. O catálogo
-(`tools/catalog.py`) indica a origem de cada tool e quem a pode usar.
+(`tools/catalog.py`) indica a origem de cada tool; quem a pode usar vem da
+lista `TOOLS` de cada ficheiro do harness. `lookup_customers` (MCP) não é
+dada a nenhum agente, porque precisaria de identificadores tirados dos
+registos.
 
 Todas as chamadas, locais ou MCP, passam pelo mesmo `ToolGateway`
-(`tools/gateway.py`):
+(`tools/gateway.py`), que aplica os hooks de `harness/hooks.py`:
 
 - **Hook antes da tool:** a tool tem de estar na lista do agente, há um limite
   de chamadas por sessão e, se for MCP, tem de estar fixada no lock (ver
   abaixo); caso contrário, a chamada é bloqueada.
 - **Hook depois da tool:** limita o tamanho do resultado e marca o texto livre
   escrito pela equipa da origem (alterações de esquema e incidentes da
-  origem), bem como os valores dos registos afetados, para ser tratado como
-  dados, nunca como instruções. Os logs são
+  origem) para ser tratado como dados, nunca como instruções. Os logs são
   gerados pela nossa pipeline e os runbooks são procedimentos nossos e
   revistos, por isso não são marcados.
 - Cada chamada, incluindo as bloqueadas ou inválidas, fica em `tool_calls` da

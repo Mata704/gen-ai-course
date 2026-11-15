@@ -82,7 +82,7 @@ INSERT INTO maintenance_windows VALUES
 
 INSERT INTO datasets VALUES
     ('sales.orders', 'orders-export-api', 'One row per customer order created or updated on the previous day.',
-     'v1.2', 'daily at 05:00 UTC', 60, 4);
+     'v1.2', 'daily at 05:00 UTC', 60, 30);
 
 INSERT INTO dataset_columns VALUES
     ('sales.orders', 1, 'order_id', 'string', 0, NULL, 'Unique order identifier, format ORD-<number>.'),

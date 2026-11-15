@@ -148,6 +148,38 @@ MIGRATIONS: list[str] = [
         message TEXT NOT NULL
     );
     """,
+    # 5: automatic actions of the remediation agent and the records held back by a quarantine.
+    """
+    CREATE TABLE incident_actions (
+        action_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        incident_id TEXT NOT NULL REFERENCES incident_workflows (incident_id),
+        source_run_id TEXT NOT NULL REFERENCES pipeline_runs (run_id),
+        action TEXT NOT NULL CHECK (action IN ('retry_ingestion', 'quarantine_failed_records')),
+        requested_by TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('running', 'executed', 'failed')),
+        detail TEXT NOT NULL DEFAULT '',
+        result_run_id TEXT REFERENCES pipeline_runs (run_id),
+        requested_at TEXT NOT NULL,
+        finished_at TEXT
+    );
+    -- The same action runs at most once on the same attempt (a failed one may be asked again).
+    CREATE UNIQUE INDEX one_action_per_attempt ON incident_actions (source_run_id, action)
+        WHERE status != 'failed';
+    CREATE TABLE quarantined_records (
+        source_run_id TEXT NOT NULL REFERENCES pipeline_runs (run_id),
+        position INTEGER NOT NULL,
+        action_id INTEGER NOT NULL REFERENCES incident_actions (action_id),
+        rule_ids_json TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        PRIMARY KEY (source_run_id, position)
+    );
+    """,
+    # 6: failed rows have their own store and an explicit lifecycle status.
+    """
+    ALTER TABLE quarantined_records RENAME TO failed_records;
+    ALTER TABLE failed_records ADD COLUMN status TEXT NOT NULL DEFAULT 'held'
+        CHECK (status IN ('held', 'released', 'discarded'));
+    """,
 ]
 
 

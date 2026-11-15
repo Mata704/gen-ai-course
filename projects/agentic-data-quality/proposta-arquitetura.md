@@ -189,7 +189,7 @@ projects/agentic-data-quality/
 ├── src/data_quality_agent/
 │   ├── domain/             # entidades, contratos e políticas
 │   ├── services/           # casos de uso e regras de negócio
-│   ├── agents/             # orquestrador e especialistas PydanticAI
+│   ├── harness/            # harness dos agentes: um ficheiro por agente, hooks, políticas e equipa PydanticAI
 │   ├── tools/              # interfaces e ferramentas permitidas
 │   ├── mcp/                # servidor MCP e dados da plataforma da origem (só leitura)
 │   ├── simulator/          # pipelines, dados sintéticos e cenários

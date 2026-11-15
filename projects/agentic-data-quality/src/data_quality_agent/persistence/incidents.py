@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from data_quality_agent.agents.models import OrchestrationResult
+from data_quality_agent.harness.orchestrator import OrchestrationResult
 from data_quality_agent.persistence.database import Database
 from data_quality_agent.persistence.models import AgentSession, AgentStep, IncidentState, IncidentWorkflow, RunSummary
 from data_quality_agent.persistence.repository import RunRepository

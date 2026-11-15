@@ -5,8 +5,8 @@ import sys
 from pathlib import Path
 
 from data_quality_agent.persistence.database import DEFAULT_DATABASE
-from data_quality_agent.agents.config import configured_model
-from data_quality_agent.agents.team import AgentExecutionError
+from data_quality_agent.harness.model import configured_model
+from data_quality_agent.harness.team import AgentExecutionError
 from data_quality_agent.service import PipelineService
 from data_quality_agent.simulator.engine import SCENARIOS_DIR
 

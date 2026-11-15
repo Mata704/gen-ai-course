@@ -4,7 +4,7 @@ These tools run in process. External data (contracts, source status, customer ma
 the Orders Platform MCP server instead; both kinds go through the same gateway.
 
 Context policy (course session 02): each tool returns a small, already-filtered view with
-evidence refs, never whole batches or every log line. Simulator bookkeeping (scenario names,
+evidence refs, never batch records or every log line. Simulator bookkeeping (scenario names,
 injected faults) is not returned, so agents cannot read the answer of a scenario.
 """
 
@@ -206,30 +206,6 @@ class DataQualityTools:
             "quality_status": summary.quality_status.value,
             "rules_checked": len(rules) if summary.quality_status.value != "not_run" else 0,
             "failed": findings,
-        }
-
-    def get_affected_records(
-        self, run_id: str, rule_id: str, limit: Annotated[int, Field(ge=1, le=20)] = 10,
-    ) -> dict[str, Any]:
-        """Only the records that failed one rule in a run, as checked by the quality gate."""
-        self._summary(run_id)
-        finding = next((f for f in self.runs.get_findings(run_id) if f.rule_id == rule_id), None)
-        if finding is None:
-            raise ToolInputError(f"Rule '{rule_id}' did not fail in run '{run_id}'.")
-        if not finding.row_indexes:
-            return {"run_id": run_id, "rule_id": rule_id, "records": [],
-                    "detail": "This rule applies to the whole batch, not to individual records."}
-        records = self.runs.get_records(run_id, "transformed")
-        return {
-            "run_id": run_id,
-            "rule_id": rule_id,
-            "affected_rows": finding.affected_rows,
-            "truncated": len(finding.row_indexes) > limit,
-            "records": [
-                {"ref": f"record:{run_id}:{index}", "index": index, "record": records[index]}
-                for index in finding.row_indexes[:limit]
-                if index < len(records)
-            ],
         }
 
     def get_batch_profile(self, run_id: str) -> dict[str, Any]:

@@ -5,6 +5,6 @@
   "seed": 41,
   "faults": [
     {"kind": "delay", "delay_minutes": 125},
-    {"kind": "drop_rows", "count": 3}
+    {"kind": "drop_rows", "count": 15}
   ]
 }

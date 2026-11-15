@@ -11,21 +11,24 @@ from uuid import uuid4
 
 from pydantic_ai.models import Model
 
-from data_quality_agent.agents.models import OrchestrationResult
-from data_quality_agent.agents.team import AgentExecutionError, AgentTeam
+from data_quality_agent.harness.orchestrator import OrchestrationResult
+from data_quality_agent.harness.policies import PolicyDenied, check_retry, plan_quarantine
+from data_quality_agent.harness.team import AgentExecutionError, AgentTeam
 from data_quality_agent.corrections import parse_corrected_batch
+from data_quality_agent.persistence.actions import ActionRepository
 from data_quality_agent.persistence.database import DEFAULT_DATABASE, Database
 from data_quality_agent.persistence.incidents import IncidentRepository
-from data_quality_agent.persistence.models import IncidentState
+from data_quality_agent.persistence.models import ActionName, IncidentState, IncidentWorkflow
 from data_quality_agent.persistence.repository import RunRepository
 from data_quality_agent.simulator.engine import (
+    SCENARIOS_DIR,
     EventListener,
     PipelineSimulator,
     load_pipeline,
     load_scenario,
 )
 from data_quality_agent.simulator.models import (
-    EventKind, LogLevel, PipelineDefinition, PipelineEvent, PipelineRun, PipelineStatus,
+    EventKind, FaultKind, LogLevel, PipelineDefinition, PipelineEvent, PipelineRun, PipelineStatus,
     Scenario, StageName, StageStatus,
 )
 from data_quality_agent.tools import PlatformClient
@@ -42,6 +45,7 @@ class PipelineService:
         self.database = Database(database_path)
         self.runs = RunRepository(self.database)
         self.incidents = IncidentRepository(self.database)
+        self.actions = ActionRepository(self.database)
         # By default the warehouse sits next to the control database (runs/warehouse.sqlite3).
         if warehouse_path is None:
             warehouse_path = self.database.path.parent / WAREHOUSE_FILENAME
@@ -161,6 +165,107 @@ class PipelineService:
             self.incidents.release_correction(incident.incident_id)
             raise
 
+    # Automatic actions (asked by the remediation agent, allowed by harness/policies.py) ----------
+
+    def source_system(self, run_id: str) -> str | None:
+        pipeline = self._stored_pipeline(run_id)
+        return pipeline.source_system if pipeline else None
+
+    def retry_ingestion(self, run_id: str, *, requested_by: str, source_status: str | None) -> dict[str, Any]:
+        incident, run, pipeline = self._action_context(run_id)
+        check_retry(
+            incident_kind=run.incident.kind if run.incident else None, run=run, pipeline=pipeline,
+            retries_done=self.actions.count_executed(incident.incident_id, "retry_ingestion"),
+            source_status=source_status,
+        )
+        bundled = self._bundled_scenario(run.scenario_id)
+        if bundled is None:
+            raise PolicyDenied(f"The source of scenario '{run.scenario_id}' is not known; it cannot be read again.")
+        # The source is read again; the failure that stopped the previous attempt is not injected again.
+        scenario = bundled.model_copy(update={"faults": [
+            fault for fault in bundled.faults
+            if fault.kind not in (FaultKind.SOURCE_UNAVAILABLE, FaultKind.PIPELINE_FAILURE)
+        ]})
+        return self._action_attempt(
+            incident.incident_id, run, pipeline, scenario, "retry_ingestion", requested_by,
+            detail=f"Ingestão repetida: a plataforma reporta a origem como '{source_status}'.",
+        )
+
+    def quarantine_failed_records(self, run_id: str, *, requested_by: str) -> dict[str, Any]:
+        incident, run, pipeline = self._action_context(run_id)
+        held = plan_quarantine(run=run, pipeline=pipeline)
+        remaining = [record for index, record in enumerate(run.input_records) if index not in held]
+        # Data faults are already in the ingested records; only the scenario's delay still applies.
+        bundled = self._bundled_scenario(run.scenario_id)
+        scenario = Scenario(
+            scenario_id=run.scenario_id, pipeline_id=run.pipeline_id, seed=run.seed,
+            description="Automatic quarantine of the records that failed row-level rules.",
+            faults=[fault for fault in (bundled.faults if bundled else []) if fault.kind == FaultKind.DELAY],
+        )
+        return self._action_attempt(
+            incident.incident_id, run, pipeline, scenario, "quarantine_failed_records", requested_by,
+            input_records=remaining,
+            quarantined={index: (rules, run.input_records[index]) for index, rules in held.items()},
+            detail=f"{len(held)} de {len(run.input_records)} registos retidos em quarentena.",
+        )
+
+    def _stored_pipeline(self, run_id: str) -> PipelineDefinition | None:
+        summary = self.runs.get_summary(run_id)
+        return self.runs.get_pipeline(summary.pipeline_id, summary.pipeline_version) if summary else None
+
+    def _action_context(self, run_id: str) -> tuple[IncidentWorkflow, PipelineRun, PipelineDefinition]:
+        incident = self.incidents.get_for_run(run_id)
+        if incident is None:
+            raise PolicyDenied("This run does not belong to an incident.")
+        if incident.latest_run_id != run_id:
+            raise PolicyDenied(f"Act only on the latest attempt of the incident ({incident.latest_run_id}).")
+        if incident.status != "investigating":
+            raise PolicyDenied("Automatic actions run only during an agent investigation.")
+        run = self._stored_run(run_id)
+        pipeline = self._stored_pipeline(run_id)
+        if pipeline is None:
+            raise PolicyDenied("The pipeline definition of this run was not found.")
+        return incident, run, pipeline
+
+    @staticmethod
+    def _bundled_scenario(scenario_id: str) -> Scenario | None:
+        for path in sorted(SCENARIOS_DIR.glob("*.json")):
+            scenario = load_scenario(path)
+            if scenario.scenario_id == scenario_id:
+                return scenario
+        return None
+
+    def _action_attempt(
+        self, incident_id: str, run: PipelineRun, pipeline: PipelineDefinition, scenario: Scenario,
+        action: ActionName, requested_by: str, *, detail: str,
+        input_records: list[dict[str, Any]] | None = None,
+        quarantined: dict[int, tuple[list[str], dict[str, Any]]] | None = None,
+    ) -> dict[str, Any]:
+        action_id = self.actions.claim(incident_id, run.run_id, action, requested_by)
+        try:
+            result = self._run(
+                scenario, pipeline, input_records=input_records, incident_id=incident_id,
+                reason=f"Ação automática '{action}' pedida pelo agente {requested_by}.",
+                destination_path=run.destination,
+            )
+        except Exception as error:
+            self.actions.fail(action_id, f"{type(error).__name__}: {error}")
+            raise
+        self.actions.complete(action_id, result_run_id=result.run_id, detail=detail, quarantined=quarantined)
+        return {
+            "ref": f"action:{action_id}",
+            "action": action,
+            "status": "executed",
+            "previous_run_id": run.run_id,
+            "new_run_id": result.run_id,
+            "pipeline_status": result.pipeline_status.value,
+            "quality_status": result.quality_status.value,
+            "failed_rules": [finding.rule_id for finding in result.findings],
+            "records_delivered": len(result.output_records),
+            "records_quarantined": len(quarantined or {}),
+            "detail": detail,
+        }
+
     def analyze(
         self, run_id: str, model: Model | str, *, on_event: EventListener | None = None,
     ) -> OrchestrationResult:
@@ -186,20 +291,26 @@ class PipelineService:
 
         def step(agent: str, kind: str, message: str) -> None:
             self.incidents.append_step(session_id, agent, kind, message)
-            emit(EventKind.LOG, f"{agent}: {kind}" + (f" — {message}" if kind == "tool" else ""))
+            emit(EventKind.LOG, f"{agent}: {kind}" + (f" — {message}" if kind in ("tool", "action") else ""))
 
-        async def investigate() -> OrchestrationResult:
+        async def investigate() -> tuple[OrchestrationResult, str]:
             async with PlatformClient() as platform:
-                return await AgentTeam(model, self.runs, platform, run_id, step).run(incident.incident_id)
+                team = AgentTeam(model, self.runs, platform, run_id, step, executor=self)
+                outcome = await team.run(incident.incident_id)
+                return outcome, team.run_id
 
         emit(EventKind.STAGE_STARTED, "Started agent investigation.")
         try:
-            outcome = asyncio.run(investigate())
+            outcome, latest_run_id = asyncio.run(investigate())
         except Exception as error:
             detail = f"{type(error).__name__}: {error}"
             self.incidents.append_step(session_id, "orchestrator", "error", detail)
             self.incidents.finish_session(session_id, error=detail)
-            self.incidents.set_status(incident.incident_id, "analysis_failed", run_id=run_id)
+            # An action may have created a newer attempt before the failure.
+            latest = self.incidents.get_for_run(run_id)
+            self.incidents.set_status(
+                incident.incident_id, "analysis_failed", run_id=latest.latest_run_id if latest else run_id,
+            )
             for stage in result.stages:
                 if stage.name == StageName.AGENT_INTERVENTION:
                     stage.status = StageStatus.FAILED
@@ -212,6 +323,6 @@ class PipelineService:
                 stage.status = status
         emit(EventKind.STAGE_FINISHED, f"Agent investigation: {outcome.status}.", status)
         self.incidents.finish_session(session_id, outcome=outcome)
-        self.incidents.set_status(incident.incident_id, outcome.status, run_id=run_id)
+        self.incidents.set_status(incident.incident_id, outcome.status, run_id=latest_run_id)
         self.runs.finish_run(result)
         return outcome

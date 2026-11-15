@@ -12,8 +12,8 @@ import streamlit as st
 
 from data_quality_agent.persistence.database import DEFAULT_DATABASE, Database
 from data_quality_agent.persistence.repository import RunRepository
-from data_quality_agent.agents.config import configured_model
-from data_quality_agent.agents.team import AgentExecutionError
+from data_quality_agent.harness.model import configured_model
+from data_quality_agent.harness.team import AgentExecutionError
 from data_quality_agent.service import PipelineService
 from data_quality_agent.simulator.engine import SCENARIOS_DIR, load_scenario
 from data_quality_agent.simulator.models import EventKind, PipelineEvent, Scenario

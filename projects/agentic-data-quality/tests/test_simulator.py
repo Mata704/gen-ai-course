@@ -41,7 +41,7 @@ def test_healthy_scenario_passes_data_quality_checks(simulator: PipelineSimulato
 
     assert result.pipeline_status == PipelineStatus.SUCCEEDED
     assert result.quality_status == QualityStatus.PASS
-    assert result.record_count == 5
+    assert result.record_count == 40
     assert result.findings == []
     assert [stage.name for stage in result.stages] == [
         StageName.INGESTION, StageName.TRANSFORMATION, StageName.DATA_QUALITY,
@@ -96,7 +96,7 @@ def test_schema_drift_and_late_low_volume_are_detected(simulator: PipelineSimula
     assert {"minimum-volume", "freshness"} <= {
         finding.rule_id for finding in late_result.findings
     }
-    assert late_result.record_count == 2
+    assert late_result.record_count == 25
     assert late_result.delay_minutes == 125
 
 
@@ -364,7 +364,7 @@ def test_pipeline_gets_the_general_rules_with_its_own_adjustments_and_rules() ->
     assert rules["expected-schema"].adjustment_reason is None
     assert rules["freshness"].maximum_delay_minutes == 60
     assert rules["freshness"].adjustment_reason
-    assert (rules["minimum-volume"].minimum_count, rules["minimum-volume"].severity.value) == (4, "medium")
+    assert (rules["minimum-volume"].minimum_count, rules["minimum-volume"].severity.value) == (30, "medium")
     assert rules["valid-status"].origin == "pipeline"
 
 

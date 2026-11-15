@@ -360,6 +360,64 @@ Ações autónomas controladas, permissões e aprovações humanas, retoma de
 processos interrompidos, memória, filtro de dados pessoais e avaliação dos
 modelos reais com o conjunto de dados maior previsto para o final.
 
+## 2026-11-15 — Harness evidente, ações automáticas e agentes sem registos
+
+### O que foi feito
+
+- O pacote `agents/` deu lugar a `harness/`, organizado como os
+  `starter/harness.py` dos exercícios: um ficheiro por agente
+  (`orchestrator.py`, `quality.py`, `diagnosis.py`, `remediation.py`,
+  `reviewer.py`) com `INSTRUCTIONS`, `TOOLS` e as verificações do output, mais
+  `specialists.py`, `hooks.py`, `policies.py`, `model.py` e `team.py` (que
+  apenas liga as peças). O catálogo lê as permissões das listas `TOOLS`.
+- Os hooks antes/depois de cada tool passaram do gateway para
+  `harness/hooks.py`; o gateway continua a ser o único caminho e a auditar
+  tudo.
+- **Os agentes nunca recebem registos do lote.** Removida a tool
+  `get_affected_records` e as referências `record:`; os agentes trabalham com
+  regras, contagens, posições de linhas, perfis, logs e a plataforma da origem.
+  `lookup_customers` (MCP) deixou de ser atribuída a qualquer agente.
+- Duas ações automáticas para o agente de remediação, com política verificada
+  em código (`harness/policies.py`) e ativada por pipeline no bloco
+  `remediation` da definição:
+  - `retry_ingestion`: só para `pipeline_failure`, se a plataforma MCP reporta a
+    origem disponível (lido pelo código) e dentro de `max_automatic_retries` (2).
+  - `quarantine_failed_records`: só com regras ao nível da linha e até
+    `max_quarantine_fraction` (5 %); os restantes registos passam de novo por
+    todas as regras.
+- Cada ação cria uma nova tentativa do mesmo incidente; a equipa passa a
+  trabalhar sobre ela e o revisor verifica-a. Ações recusadas ficam no audit
+  como `blocked`, com o motivo.
+- Migração 5: `incident_actions` (com índice único por tentativa e ação) e
+  `quarantined_records`. O frontend mostra as ações e os registos em
+  quarentena, só para revisão humana.
+- Dataset com 40 encomendas; volume mínimo de 30; novo cenário
+  `few_invalid_records.json` (2 em 40); `late_and_low_volume.json` com 25.
+  Runbooks atualizados para a versão 2.
+
+### Validação
+
+- `uv run --locked --extra dev pytest -q -p no:cacheprovider`: 72 testes
+  passaram. Novos testes cobrem o retry com revisão, a quarentena com 38
+  entregues e 2 retidos, as recusas (origem `down`, demasiados registos,
+  regras do lote, segunda execução, fora de uma investigação) e que nenhum
+  resultado de tool enviado ao modelo contém identificadores de registos.
+- `uv lock --check`, compilação dos módulos e `uv build`: concluídos.
+
+### Ajuste à persistência da quarentena
+
+- Migração 6 renomeia `quarantined_records` para `failed_records`, preservando
+  as linhas já guardadas, e acrescenta o estado (`held`, `released` ou
+  `discarded`), que começa em `held`.
+- A tabela continua na base de controlo `pipelines.sqlite3`, separada do
+  warehouse. A interface mostra o estado junto às linhas para revisão humana;
+  ainda não há fluxo para o alterar.
+
+### Ainda por fazer
+
+Ações que exijam aprovação humana (por exemplo, alterar uma regra), retoma de
+uma ação interrompida a meio, memória e avaliação com modelos reais.
+
 ## Próximos registos
 
 Adicionar uma nova secção datada quando um marco for concluído. Atualizar este

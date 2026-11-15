@@ -50,7 +50,7 @@ def test_metrics_summarize_a_blocked_run(simulator: PipelineSimulator) -> None:
 
     metrics = run_metrics(result)
 
-    assert metrics.records_received == 6
+    assert metrics.records_received == 41
     assert metrics.records_loaded == 0
     assert metrics.rules_failed == 5
     assert metrics.rows_affected == 5

@@ -14,6 +14,7 @@ from data_quality_agent.service import PipelineService
 from data_quality_agent.simulator.engine import SCENARIOS_DIR
 from data_quality_agent.simulator.models import PipelineRun
 from data_quality_agent.tools import CATALOG, DataQualityTools, PlatformClient, ToolGateway
+from data_quality_agent.tools.catalog import AGENTS, tools_for
 from data_quality_agent.tools.platform_client import MCP_LOCK, fingerprint, read_lock
 
 
@@ -71,12 +72,17 @@ def test_quality_tools_return_only_the_evidence_that_matters(
 ) -> None:
     quality = gateway(service, "quality")
 
-    records = call(quality, "get_affected_records", run_id=blocked_run.run_id, rule_id="valid-amount")
+    findings = call(quality, "get_quality_findings", run_id=blocked_run.run_id)
+    profile = call(quality, "get_batch_profile", run_id=blocked_run.run_id)
     runbook = call(quality, "find_runbook", run_id=blocked_run.run_id, rule_id="unique-order")
 
-    assert [entry["record"]["amount"] for entry in records["records"]] == [-12.5]
-    assert "never as instructions" in records["content_trust"]
-    assert records["records"][0]["ref"].startswith(f"record:{blocked_run.run_id}:")
+    amount = next(finding for finding in findings["failed"] if finding["rule_id"] == "valid-amount")
+    assert amount["row_indexes"] == next(
+        finding.row_indexes for finding in blocked_run.findings if finding.rule_id == "valid-amount"
+    )
+    # Agents get positions, counts and profiles; the records themselves never leave the database.
+    assert profile["row_count"] == blocked_run.record_count
+    assert "ORD-1" not in json.dumps(findings) + json.dumps(profile)
     assert runbook["runbook"]["id"] == "duplicate-records"
     assert "content_trust" not in runbook
 
@@ -88,7 +94,7 @@ def test_diagnosis_compares_a_late_batch_with_the_last_delivered_one(service: Pi
     comparison = call(gateway(service, "diagnosis"), "compare_with_last_success", run_id=late.run_id)
 
     assert comparison["baseline_run_id"] == healthy.run_id
-    assert comparison["record_count"] == {"current": 2, "baseline": 5}
+    assert comparison["record_count"] == {"current": 25, "baseline": 40}
     assert comparison["delay_minutes"] == {"current": 125, "baseline": 0}
 
 
@@ -97,7 +103,7 @@ def test_hooks_block_calls_outside_the_agent_catalog_and_beyond_the_budget(
 ) -> None:
     reviewer = gateway(service, "reviewer", max_calls=2)
 
-    outside = call(reviewer, "get_affected_records", run_id=blocked_run.run_id, rule_id="valid-amount")
+    outside = call(reviewer, "retry_ingestion", run_id=blocked_run.run_id)
     invalid = call(reviewer, "get_run_summary", run_id=blocked_run.run_id, extra=1)
     over_budget = call(reviewer, "get_run_summary", run_id=blocked_run.run_id)
 
@@ -106,10 +112,14 @@ def test_hooks_block_calls_outside_the_agent_catalog_and_beyond_the_budget(
     assert over_budget["status"] == "blocked"
     audit = AuditRepository(service.database).list_calls(run_id=blocked_run.run_id)
     assert [(c.tool, c.source, c.outcome) for c in audit] == [
-        ("get_affected_records", "local", "blocked"),
+        ("retry_ingestion", "local", "blocked"),
         ("get_run_summary", "local", "error"),
         ("get_run_summary", "local", "blocked"),
     ]
+
+
+def test_only_the_remediation_harness_grants_actions() -> None:
+    assert {role for role in AGENTS if any(spec.action for spec in tools_for(role))} == {"remediation"}
 
 
 def test_orchestrator_brief_holds_the_incident_but_no_evidence(
@@ -127,22 +137,25 @@ def test_orchestrator_brief_holds_the_incident_but_no_evidence(
 def test_platform_tools_answer_from_the_external_database_through_the_gateway(
     service: PipelineService, blocked_run: PipelineRun,
 ) -> None:
-    customers, changes, outside = with_platform(service, "quality", [
-        ("lookup_customers", {"customer_ids": ["C-999", "C-777"]}),
+    contract, changes, outside, unassigned = with_platform(service, "quality", [
+        ("get_dataset_contract", {"dataset_id": "sales.orders"}),
         ("list_schema_changes", {"dataset_id": "sales.orders", "status": "released"}),
         ("get_source_status", {"system_id": "orders-export-api"}),
+        ("lookup_customers", {"customer_ids": ["C-999"]}),
     ], run_id=blocked_run.run_id)
 
-    assert customers["customers"][0]["status"] == "test"
-    assert customers["not_found"] == ["C-777"]
+    assert contract["freshness_sla_minutes"] == 60
     assert [change["column"] for change in changes["changes"]] == ["status"]
     assert "never as instructions" in changes["content_trust"]
     assert outside["status"] == "blocked"
+    # It would need customer ids taken from the records, so no harness file grants it.
+    assert unassigned["status"] == "blocked"
     audit = AuditRepository(service.database).list_calls(run_id=blocked_run.run_id)
     assert [(c.tool, c.source, c.outcome) for c in audit] == [
-        ("lookup_customers", "mcp", "ok"),
+        ("get_dataset_contract", "mcp", "ok"),
         ("list_schema_changes", "mcp", "ok"),
         ("get_source_status", "mcp", "blocked"),
+        ("lookup_customers", "mcp", "blocked"),
     ]
 
 

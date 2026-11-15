@@ -133,6 +133,15 @@ class GeneralRuleAdjustment(StrictModel):
     maximum_delay_minutes: int | None = Field(default=None, ge=0)
 
 
+class RemediationPolicy(StrictModel):
+    """Automatic actions this pipeline allows. Both are off unless the pipeline opts in."""
+
+    max_automatic_retries: int = Field(default=0, ge=0, le=5)
+    # Share of the batch that may be held back so the rest can be delivered.
+    max_quarantine_fraction: float = Field(default=0.0, ge=0.0, le=0.2)
+    reason: str | None = None
+
+
 class PipelineConfig(StrictModel):
     """A pipeline definition file: adjustments to the general rules plus the pipeline's own rules."""
 
@@ -143,6 +152,7 @@ class PipelineConfig(StrictModel):
     source_system: str | None = None
     source_dataset: str | None = None
     expected_columns: list[str]
+    remediation: RemediationPolicy = Field(default_factory=RemediationPolicy)
     general_rules: dict[str, GeneralRuleAdjustment] = Field(default_factory=dict)
     rules: list[QualityRule] = Field(default_factory=list)
 
@@ -156,6 +166,7 @@ class PipelineDefinition(StrictModel):
     source_system: str | None = None
     source_dataset: str | None = None
     expected_columns: list[str]
+    remediation: RemediationPolicy = Field(default_factory=RemediationPolicy)
     rules: list[QualityRule]
     # General rules this pipeline switched off, with the reason.
     disabled_general_rules: dict[str, str] = Field(default_factory=dict)

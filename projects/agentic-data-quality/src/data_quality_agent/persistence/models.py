@@ -70,3 +70,30 @@ class AgentStep(BaseModel):
     agent: str
     kind: str
     message: str
+
+
+ActionName = Literal["retry_ingestion", "quarantine_failed_records"]
+
+
+class IncidentAction(BaseModel):
+    action_id: int
+    incident_id: str
+    source_run_id: str
+    action: ActionName
+    requested_by: str
+    status: Literal["running", "executed", "failed"]
+    detail: str
+    result_run_id: str | None
+    requested_at: datetime
+    finished_at: datetime | None
+
+
+class FailedRecord(BaseModel):
+    """A failed row stored separately from approved data. Never given to the agents."""
+
+    source_run_id: str
+    position: int
+    action_id: int
+    rule_ids: list[str]
+    record: dict[str, Any]
+    status: Literal["held", "released", "discarded"]
