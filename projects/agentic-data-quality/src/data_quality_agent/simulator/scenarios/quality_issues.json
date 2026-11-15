@@ -1,0 +1,13 @@
+{
+  "scenario_id": "orders-quality-issues",
+  "description": "Several row-level quality defects in one successful pipeline run.",
+  "pipeline_id": "orders_daily",
+  "seed": 23,
+  "faults": [
+    {"kind": "null_value", "row_index": 0, "field": "customer_id"},
+    {"kind": "duplicate_row", "row_index": 1},
+    {"kind": "set_value", "row_index": 2, "field": "amount", "value": -12.5},
+    {"kind": "set_value", "row_index": 3, "field": "status", "value": "pending_review"},
+    {"kind": "set_value", "row_index": 4, "field": "customer_id", "value": "C-999"}
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "scenario_id": "healthy-orders",
+  "description": "A healthy daily orders pipeline with fresh, valid records.",
+  "pipeline_id": "orders_daily",
+  "seed": 17,
+  "faults": []
+}

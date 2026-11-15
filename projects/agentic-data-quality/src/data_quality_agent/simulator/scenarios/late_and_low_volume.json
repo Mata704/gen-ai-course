@@ -1,0 +1,10 @@
+{
+  "scenario_id": "orders-late-low-volume",
+  "description": "The source is delayed and contains fewer records than expected.",
+  "pipeline_id": "orders_daily",
+  "seed": 41,
+  "faults": [
+    {"kind": "delay", "delay_minutes": 125},
+    {"kind": "drop_rows", "count": 3}
+  ]
+}

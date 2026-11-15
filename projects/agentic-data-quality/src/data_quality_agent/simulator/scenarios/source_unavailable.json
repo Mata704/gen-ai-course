@@ -1,0 +1,9 @@
+{
+  "scenario_id": "orders-source-unavailable",
+  "description": "The synthetic source service is unavailable before the run starts.",
+  "pipeline_id": "orders_daily",
+  "seed": 53,
+  "faults": [
+    {"kind": "source_unavailable"}
+  ]
+}

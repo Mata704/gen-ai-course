@@ -1,0 +1,67 @@
+{
+  "pipeline_id": "orders_daily",
+  "name": "Daily orders quality pipeline",
+  "dataset_file": "orders.json",
+  "expected_columns": ["order_id", "customer_id", "amount", "status"],
+  "rules": [
+    {
+      "rule_id": "schema-v1",
+      "name": "Expected order schema",
+      "kind": "schema",
+      "severity": "high"
+    },
+    {
+      "rule_id": "required-customer",
+      "name": "Customer is required",
+      "kind": "not_null",
+      "severity": "high",
+      "field": "customer_id"
+    },
+    {
+      "rule_id": "unique-order",
+      "name": "Order identifier is unique",
+      "kind": "unique",
+      "severity": "critical",
+      "field": "order_id"
+    },
+    {
+      "rule_id": "valid-amount",
+      "name": "Order amount is within range",
+      "kind": "numeric_range",
+      "severity": "high",
+      "field": "amount",
+      "minimum": 0,
+      "maximum": 100000
+    },
+    {
+      "rule_id": "valid-status",
+      "name": "Order status is supported",
+      "kind": "allowed_values",
+      "severity": "medium",
+      "field": "status",
+      "allowed_values": ["created", "settled", "cancelled"]
+    },
+    {
+      "rule_id": "known-customer",
+      "name": "Customer reference exists",
+      "kind": "referential_integrity",
+      "severity": "high",
+      "field": "customer_id",
+      "reference_values": ["C-101", "C-102", "C-103", "C-104"]
+    },
+    {
+      "rule_id": "minimum-volume",
+      "name": "Minimum daily record volume",
+      "kind": "min_rows",
+      "severity": "medium",
+      "minimum_count": 4
+    },
+    {
+      "rule_id": "freshness-60m",
+      "name": "Source data freshness",
+      "kind": "freshness",
+      "severity": "high",
+      "maximum_delay_minutes": 60
+    }
+  ]
+}

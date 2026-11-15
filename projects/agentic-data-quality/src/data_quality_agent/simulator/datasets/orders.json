@@ -1,0 +1,7 @@
+[
+  {"order_id": "ORD-1001", "customer_id": "C-101", "amount": 125.5, "status": "created"},
+  {"order_id": "ORD-1002", "customer_id": "C-102", "amount": 80.0, "status": "settled"},
+  {"order_id": "ORD-1003", "customer_id": "C-103", "amount": 249.99, "status": "created"},
+  {"order_id": "ORD-1004", "customer_id": "C-104", "amount": 42.0, "status": "cancelled"},
+  {"order_id": "ORD-1005", "customer_id": "C-101", "amount": 1000.0, "status": "settled"}
+]

@@ -1,0 +1,9 @@
+{
+  "scenario_id": "orders-schema-drift",
+  "description": "The source adds a column that is not part of the expected schema.",
+  "pipeline_id": "orders_daily",
+  "seed": 31,
+  "faults": [
+    {"kind": "add_column", "field": "campaign_code", "value": "SPRING"}
+  ]
+}
