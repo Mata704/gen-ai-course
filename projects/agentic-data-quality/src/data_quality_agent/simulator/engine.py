@@ -65,6 +65,7 @@ class PipelineSimulator:
         self,
         scenario: Scenario | str | Path,
         *,
+        run_id: str | None = None,
         input_path: str | Path | None = None,
         on_event: EventListener | None = None,
         input_records: list[dict[str, Any]] | None = None,
@@ -81,7 +82,7 @@ class PipelineSimulator:
             raise ValueError("The scenario and pipeline definition do not match.")
         stages = {name: StageResult(name=name, status=StageStatus.SKIPPED) for name in StageName}
         result = PipelineRun(
-            run_id=str(uuid4()),
+            run_id=run_id or str(uuid4()),
             scenario_id=scenario.scenario_id,
             pipeline_id=pipeline.pipeline_id,
             seed=scenario.seed,

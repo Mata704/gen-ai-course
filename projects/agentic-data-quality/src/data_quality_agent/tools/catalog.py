@@ -72,6 +72,8 @@ CATALOG: dict[str, ToolSpec] = {
         _local("compare_with_last_success"),
         _local("get_incident"),
         _local("get_delivery_status"),
+        _local("get_relevant_memory"),
+        _local("remember_incident_context"),
         _local("find_runbook"),
         # Local actions, checked by harness/policies.py.
         _action("retry_ingestion"),

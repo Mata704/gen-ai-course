@@ -410,13 +410,29 @@ modelos reais com o conjunto de dados maior previsto para o final.
   as linhas já guardadas, e acrescenta o estado (`held`, `released` ou
   `discarded`), que começa em `held`.
 - A tabela continua na base de controlo `pipelines.sqlite3`, separada do
-  warehouse. A interface mostra o estado junto às linhas para revisão humana;
-  ainda não há fluxo para o alterar.
+  warehouse. A interface mostra o estado junto às linhas para revisão humana.
+
+### Aprovações, retoma, memória e filtro de dados pessoais
+
+- Migração 7 acrescenta pedidos de decisão para libertar/descartar linhas
+  falhadas, e memória por pipeline com proveniência de tool e validade.
+- A UI exige solicitante e decisor diferentes. A execução da decisão volta a
+  verificar em código que a linha continua `held`; a aprovação não grava dados
+  no warehouse.
+- Ações persistem um `execution_run_id` determinístico. A UI pode retomar
+  ações interrompidas após 10 minutos sem sessão ativa; execuções parciais
+  reutilizam a mesma chave e limpam a entrega parcial antes do replay.
+- As tools oferecem memória ativa ao contexto dos especialistas; o diagnóstico
+  só pode guardar notas concisas ligadas a uma chamada bem-sucedida e com
+  validade de 1–365 dias.
+- O hook pós-tool filtra e-mails, telefones e NIFs reconhecidos antes de os
+  resultados chegarem aos agentes.
 
 ### Ainda por fazer
 
-Ações que exijam aprovação humana (por exemplo, alterar uma regra), retoma de
-uma ação interrompida a meio, memória e avaliação com modelos reais.
+Alteração de regras sujeita a aprovação, autenticação real de solicitantes e
+aprovadores, avaliação das respostas com modelos reais e validação mais ampla
+do filtro de dados pessoais.
 
 ## Próximos registos
 

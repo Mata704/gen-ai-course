@@ -7,6 +7,7 @@ import streamlit as st
 from data_quality_agent.harness.model import configured_model
 from data_quality_agent.harness.team import AgentExecutionError
 from data_quality_agent.corrections import MAX_BATCH_BYTES
+from data_quality_agent.harness.policies import PolicyDenied
 from data_quality_agent.service import PipelineService
 from data_quality_agent.simulator.events import EventListener
 from data_quality_agent.simulator.models import PipelineEvent, PipelineRun, PipelineStatus
@@ -40,9 +41,21 @@ def _render_actions(service: PipelineService, incident_id: str) -> None:
         ],
         hide_index=True, width="stretch",
     )
+    if any(action.status == "running" for action in actions):
+        if st.button("Retomar ações interrompidas", key=f"recover_actions_{incident_id}"):
+            try:
+                recovered = service.recover_interrupted_actions(incident_id)
+            except (PolicyDenied, ValueError, OSError) as error:
+                st.error(str(error))
+            else:
+                if recovered:
+                    workflow = service.incidents.get_for_run(recovered[-1]["run_id"])
+                    if workflow is not None:
+                        st.session_state[NEXT_SELECTION_KEY] = workflow.latest_run_id
+                st.rerun()
     held = service.actions.list_failed_records(incident_id)
     if held:
-        with st.expander(f"Registos em quarentena ({len(held)}) — para revisão humana; não são enviados aos agentes"):
+        with st.expander(f"Registos falhados ({len(held)}) — SQLite de controlo; não são enviados aos agentes"):
             st.dataframe(
                 [
                     {"Estado": item.status, "Tentativa": item.source_run_id, "Posição": item.position,
@@ -51,6 +64,56 @@ def _render_actions(service: PipelineService, incident_id: str) -> None:
                 ],
                 hide_index=True, width="stretch",
             )
+            st.caption("Libertar/descartar altera apenas a classificação nesta tabela; não carrega dados no warehouse.")
+            for item in (record for record in held if record.status == "held"):
+                with st.form(f"request_failed_record_{incident_id}_{item.source_run_id}_{item.position}"):
+                    target = st.selectbox(
+                        f"Decisão para a posição {item.position}",
+                        ("released", "discarded"),
+                        format_func=lambda value: "Libertar para revisão" if value == "released" else "Descartar",
+                    )
+                    requester = st.text_input(
+                        "Solicitante", key=f"requester_{incident_id}_{item.source_run_id}_{item.position}",
+                    )
+                    reason = st.text_input(
+                        "Motivo", key=f"request_reason_{incident_id}_{item.source_run_id}_{item.position}",
+                    )
+                    if st.form_submit_button("Pedir aprovação"):
+                        try:
+                            service.approvals.request(
+                                source_run_id=item.source_run_id, position=item.position,
+                                target_status=target, reason=reason, requested_by=requester,
+                            )
+                        except (PolicyDenied, ValueError) as error:
+                            st.error(str(error))
+                        else:
+                            st.rerun()
+
+    pending = [
+        request for request in service.approvals.list_for_incident(incident_id)
+        if request.status == "pending"
+    ]
+    if pending:
+        st.markdown("##### Pedidos de aprovação")
+        for request in pending:
+            st.write(
+                f"Posição {request.position}: {request.target_status} — {request.reason} "
+                f"(pedido por {request.requested_by})"
+            )
+            with st.form(f"decide_approval_{request.approval_id}"):
+                decider = st.text_input("Aprovador", key=f"decider_{request.approval_id}")
+                approve = st.form_submit_button("Aprovar e executar")
+                reject = st.form_submit_button("Rejeitar")
+                if approve or reject:
+                    try:
+                        if approve:
+                            service.approvals.approve(request.approval_id, decided_by=decider)
+                        else:
+                            service.approvals.reject(request.approval_id, decided_by=decider)
+                    except (PolicyDenied, ValueError) as error:
+                        st.error(str(error))
+                    else:
+                        st.rerun()
 
 
 def render_incident(service: PipelineService, result: PipelineRun, run_agents: bool) -> None:
@@ -85,6 +148,19 @@ def render_incident(service: PipelineService, result: PipelineRun, run_agents: b
             for step in service.incidents.list_steps(session.session_id):
                 with st.expander(f"{step.agent} · {step.kind} · {step.timestamp:%H:%M:%S}"):
                     st.code(step.message, language=None)
+
+    if incident.status == "investigating" and any(
+        session.status == "running"
+        for attempt in attempts
+        for session in service.incidents.list_sessions(attempt.run_id)
+    ):
+        if st.button("Retomar investigação interrompida", key=f"recover_session_{incident.incident_id}"):
+            try:
+                service.recover_stale_investigation(incident.incident_id)
+            except PolicyDenied as error:
+                st.error(str(error))
+            else:
+                st.rerun()
 
     busy = incident.status in ("investigating", "correcting")
     if incident.status == "resolved":

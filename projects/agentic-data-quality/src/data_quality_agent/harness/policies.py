@@ -60,3 +60,11 @@ def plan_quarantine(*, run: PipelineRun, pipeline: PipelineDefinition) -> dict[i
             f"{len(positions)} of {total} records failed; the pipeline allows holding back at most {limit:.0%}."
         )
     return positions
+
+
+def check_failed_record_disposition(*, current_status: str, target_status: str) -> None:
+    """Authorize a human-approved disposition without allowing approval to override policy."""
+    if current_status != "held":
+        raise PolicyDenied("Only a held failed record can be released or discarded.")
+    if target_status not in {"released", "discarded"}:
+        raise PolicyDenied("A failed record may only be released or discarded.")

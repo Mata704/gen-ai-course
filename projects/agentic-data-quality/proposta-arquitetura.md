@@ -375,14 +375,17 @@ pelo hash do nome, descrição e esquema de parâmetros (`tools/mcp_lock.json`,
 sessão 03); uma tool nova ou alterada fica bloqueada até ser revista com
 `data-quality-mcp-lock --update-lock`. Tools locais e MCP passam pelo mesmo
 `ToolGateway`, com hooks antes (allowlist, limite de chamadas e tool fixada) e
-depois (limite de tamanho e marca de conteúdo não confiável para o texto
-livre da origem: alterações de esquema e incidentes da origem), e todas ficam
-auditadas em `tool_calls` da base local, com a origem. As tools são só de
-leitura, e as locais nunca revelam o cenário nem os logs que só descrevem a
-simulação. Os agentes validam as referências dos seus outputs contra as
-tools efetivamente usadas; a resolução exige revisão independente e
-confirmação determinística. Ficam por fazer: ações (serão tools locais,
-porque a plataforma é só de consulta), autorização e aprovações.
+depois (limite de tamanho, redação de e-mail/telefone/NIF reconhecidos e marca
+de conteúdo não confiável para texto livre da origem), e todas ficam auditadas
+em `tool_calls` da base local, com a origem. Tools locais nunca revelam os
+registos do lote nem os logs que só descrevem a simulação. As referências de
+evidência dos outputs são validadas contra as tools efetivamente usadas; a
+resolução exige revisão independente e confirmação determinística. As ações
+de retry/quarentena são tools locais autorizadas por políticas em código.
+Decisões de libertar/descartar linhas exigem pedido e aprovação humana; a
+política é revalidada na execução. A interface local não autentica identidades,
+pelo que os nomes de solicitante/aprovador são apenas trilha de auditoria, não
+uma prova de identidade.
 
 ## 11. Persistência e memória
 
@@ -406,16 +409,20 @@ apresentados como factos atuais. Escrita, correção, esquecimento e proposta de
 runbook seguem políticas explícitas; procedimento operacional só é publicado
 após revisão humana.
 
-**Implementado (migrações 1 a 4), na base de controlo:** `pipelines` (versionada por hash da definição),
+**Implementado (migrações 1 a 7), na base de controlo:** `pipelines` (versionada por hash da definição),
 `pipeline_runs` (com o caminho do destino de cada execução), `run_stages`,
 `run_events` (gravados ao vivo, modo WAL), `run_records`, `quality_findings`,
 `incidents` e `tool_calls` (auditoria das tools, com a origem `local` ou
 `mcp`, acrescentada na migração 2). A migração 4 acrescenta
 `incident_workflows` e `incident_attempts` (identidade estável e correções),
 e `agent_sessions` e `agent_steps` (outputs, falhas e passos dos agentes).
-Checkpoints para retoma, ações, aprovações e memórias serão acrescentados em
-novas migrações. Os runbooks são ficheiros versionados, não linhas da
-base de dados. Há mais dois ficheiros fora destas migrações: o destino
+As migrações 5–7 acrescentam ações com chave idempotente para retoma,
+`failed_records`, decisões humanas sobre essas linhas e `incident_memories`
+com proveniência por tool e validade. Uma ação incompleta reutiliza o mesmo
+`run_id` e limpa a entrega parcial antes do replay. O diagnóstico pode escrever
+notas curtas ligadas a evidência; os agentes só consultam memórias não expiradas
+da pipeline atual. Os runbooks são ficheiros versionados, não linhas da base
+de dados. Há mais dois ficheiros fora destas migrações: o destino
 (`runs/warehouse.sqlite3`, tabela `pipeline_output` com os dados aprovados,
 retirada da base de controlo na migração 3) e a plataforma da origem, só de
 leitura (ver secção 10).

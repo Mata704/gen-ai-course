@@ -63,12 +63,14 @@ class ToolGateway:
         try:
             result = await self._execute(spec, arguments)
         except PolicyDenied as denied:
-            self._record(name, spec, arguments, "blocked", f"Policy: {denied}", started)
-            return {"status": "blocked", "reason": f"Policy: {denied}"}
+            result = after_tool(spec, {"status": "blocked", "reason": f"Policy: {denied}"})
+            self._record(name, spec, arguments, "blocked", result.get("reason", ""), started)
+            return result
         except (ToolInputError, ValidationError, RemoteToolError) as error:
             detail = _validation_message(error) if isinstance(error, ValidationError) else str(error)
-            self._record(name, spec, arguments, "error", detail, started)
-            return {"error": detail}
+            result = after_tool(spec, {"error": detail})
+            self._record(name, spec, arguments, "error", result.get("error", ""), started)
+            return result
         except Exception as error:
             self._record(name, spec, arguments, "error", f"{type(error).__name__}: {error}", started)
             return {"error": f"Tool '{name}' failed with an internal error; report it instead of retrying."}

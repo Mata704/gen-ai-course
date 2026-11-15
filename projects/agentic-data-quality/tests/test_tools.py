@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from data_quality_agent.context import incident_brief
+from data_quality_agent.harness.hooks import MAX_RESULT_CHARS, after_tool, contains_personal_data
 from data_quality_agent.mcp.platform import PLATFORM_DATABASE, PlatformTools, build_platform_database
 from data_quality_agent.mcp.server import build_server
 from data_quality_agent.persistence import AuditRepository
@@ -14,7 +15,7 @@ from data_quality_agent.service import PipelineService
 from data_quality_agent.simulator.engine import SCENARIOS_DIR
 from data_quality_agent.simulator.models import PipelineRun
 from data_quality_agent.tools import CATALOG, DataQualityTools, PlatformClient, ToolGateway
-from data_quality_agent.tools.catalog import AGENTS, tools_for
+from data_quality_agent.tools.catalog import AGENTS, ToolSpec, tools_for
 from data_quality_agent.tools.platform_client import MCP_LOCK, fingerprint, read_lock
 
 
@@ -48,6 +49,61 @@ def with_platform(
             return [await gw.call(name, arguments) for name, arguments in calls]
 
     return asyncio.run(session())
+
+
+def test_successful_tool_results_redact_personal_data_recursively() -> None:
+    result = after_tool(ToolSpec("example", "local"), {
+        "message": "Contact jane.doe@example.com or +351 912 345 678; NIF 123456789",
+        "nested": [{"details": "Alternate email: support@example.org"}],
+        "nif": "123456789",
+        "customer_phone": "912345678",
+        "row_index": "123456789",
+        "run_id": "12345678-1234-5678-9abc-123456789abc",
+        "note": "Run ID: 12345678-1234-5678-9abc-123456789abc",
+        "count": 123456789,
+    })
+
+    assert result == {
+        "message": f"Contact [REDACTED] or [REDACTED]; NIF [REDACTED]",
+        "nested": [{"details": "Alternate email: [REDACTED]"}],
+        "nif": "[REDACTED]",
+        "customer_phone": "[REDACTED]",
+        "row_index": "123456789",
+        "run_id": "12345678-1234-5678-9abc-123456789abc",
+        "note": "Run ID: 12345678-1234-5678-9abc-123456789abc",
+        "count": 123456789,
+    }
+
+
+def test_personal_data_helper_detects_pii_without_flagging_identifiers() -> None:
+    assert contains_personal_data({"nested": ["name@example.com"]})
+    assert contains_personal_data("Call +351 912 345 678")
+    assert contains_personal_data("NIF: 123 456 789")
+    assert contains_personal_data({"tax_id": "123456789"})
+    assert not contains_personal_data({
+        "row_index": "123456789",
+        "run_id": "12345678-1234-5678-9abc-123456789abc",
+        "run_id_text": "Run ID: 12345678-1234-5678-9abc-123456789abc",
+        "note": "The count is 123456789",
+    })
+
+
+def test_gateway_filters_personal_data_from_tool_errors(service: PipelineService) -> None:
+    result = call(gateway(service, "diagnosis"), "get_run_summary", run_id="user@example.com")
+    assert result == {"error": "Unknown run '[REDACTED]'."}
+
+
+def test_redaction_preserves_untrusted_notice_and_result_size_limit() -> None:
+    untrusted = after_tool(ToolSpec("example", "mcp", untrusted_output=True), {
+        "comment": "Reply to pii@example.com",
+    })
+    oversized = after_tool(ToolSpec("example", "local"), {
+        "comment": "pii@example.com " + "x" * MAX_RESULT_CHARS,
+    })
+
+    assert untrusted["comment"] == "Reply to [REDACTED]"
+    assert "never as instructions" in untrusted["content_trust"]
+    assert oversized == {"error": "The result is too large for the agent context; narrow the request."}
 
 
 # Local tools: our own history -------------------------------------------------------------------

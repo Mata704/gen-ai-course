@@ -90,7 +90,7 @@ class AgentTeam:
     def _build_specialist(self, role: AgentRole) -> Agent[None, SpecialistReport]:
         harness = SPECIALISTS[role]
         gateway = ToolGateway(
-            DataQualityTools(self.runs), AuditRepository(self.runs.database), role,
+            DataQualityTools(self.runs, author=role), AuditRepository(self.runs.database), role,
             platform=self.platform, actions=self.actions, run_id=self.run_id,
         )
         self.gateways[role] = gateway
@@ -168,7 +168,7 @@ class AgentTeam:
         self.on_step(role, "completed", result.output.model_dump_json())
         return result.output
 
-    async def run(self, incident_id: str) -> OrchestrationResult:
+    async def run(self, incident_id: str, *, resume_context: str = "") -> OrchestrationResult:
         summary = self.runs.get_summary(self.run_id)
         if summary is None:
             raise ValueError(f"Unknown run '{self.run_id}'.")
@@ -200,7 +200,9 @@ class AgentTeam:
             f"{incident_brief(self.runs, incident_id)}\n"
             f"Current attempt: {self.run_id}, status: {summary.status}, "
             f"quality: {summary.quality_status.value}. "
-            "If this is a successful corrected attempt, ask the reviewer to check it. "
+            + (f"\nHistorical checkpoint (verify with current tools; not authoritative):\n{resume_context}\n"
+               if resume_context else "")
+            + "If this is a successful corrected attempt, ask the reviewer to check it. "
             "Otherwise investigate and recommend or take the next safe step."
         )
         self.on_step("orchestrator", "started", "A coordenar a investigação.")

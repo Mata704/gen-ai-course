@@ -14,6 +14,7 @@ TOOLS = (
     "get_quality_findings",
     "get_batch_profile",
     "find_runbook",
+    "get_relevant_memory",
     # Orders Platform (MCP)
     "get_dataset_contract",
     "list_schema_changes",

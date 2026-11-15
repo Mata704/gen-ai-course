@@ -64,11 +64,23 @@ class IncidentRepository:
 
     def add_attempt(self, incident_id: str, run_id: str, reason: str) -> None:
         with self.database.transaction() as connection:
-            connection.execute("INSERT INTO incident_attempts VALUES (?, ?, ?)", (run_id, incident_id, reason))
+            connection.execute(
+                "INSERT OR IGNORE INTO incident_attempts VALUES (?, ?, ?)", (run_id, incident_id, reason),
+            )
             connection.execute(
                 "UPDATE incident_workflows SET latest_run_id = ?, updated_at = ? WHERE incident_id = ?",
                 (run_id, _now(), incident_id),
             )
+
+    def find_action_attempt(self, incident_id: str, action: str, requested_by: str) -> str | None:
+        reason = f"Ação automática '{action}' pedida pelo agente {requested_by}."
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT run_id FROM incident_attempts "
+                "WHERE incident_id = ? AND correction_reason = ? ORDER BY rowid DESC LIMIT 1",
+                (incident_id, reason),
+            ).fetchone()
+        return row["run_id"] if row else None
 
     def set_status(self, incident_id: str, status: IncidentState, *, run_id: str) -> None:
         with self.database.transaction() as connection:
@@ -118,6 +130,32 @@ class IncidentRepository:
                 ("failed" if error else "completed", _now(),
                  outcome.model_dump_json() if outcome else None, error, session_id),
             )
+
+    def recover_stale_sessions(self, incident_id: str, *, stale_before: datetime) -> int:
+        """Close sessions abandoned by a process that stopped before recording its outcome."""
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                "UPDATE agent_sessions SET status = 'failed', finished_at = ?, error = ? "
+                "WHERE status = 'running' AND started_at < ? AND run_id IN "
+                "(SELECT run_id FROM incident_attempts WHERE incident_id = ?)",
+                (_now(), "Investigation interrupted; explicitly resumed by an operator.",
+                 stale_before.isoformat(), incident_id),
+            )
+            if cursor.rowcount:
+                connection.execute(
+                    "UPDATE incident_workflows SET status = 'analysis_failed', updated_at = ? "
+                    "WHERE incident_id = ? AND status = 'investigating'",
+                    (_now(), incident_id),
+                )
+            return cursor.rowcount
+
+    def has_active_session(self, incident_id: str) -> bool:
+        with self.database.transaction() as connection:
+            return connection.execute(
+                "SELECT 1 FROM agent_sessions s JOIN incident_attempts a USING (run_id) "
+                "WHERE a.incident_id = ? AND s.status = 'running' LIMIT 1",
+                (incident_id,),
+            ).fetchone() is not None
 
     def list_sessions(self, run_id: str) -> list[AgentSession]:
         with self.database.transaction() as connection:

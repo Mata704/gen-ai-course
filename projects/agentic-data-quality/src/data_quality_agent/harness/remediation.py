@@ -24,6 +24,7 @@ ACTIONS = ("retry_ingestion", "quarantine_failed_records")
 TOOLS = (
     "get_incident",
     "find_runbook",
+    "get_relevant_memory",
     *ACTIONS,
     # Orders Platform (MCP)
     "get_source_status",

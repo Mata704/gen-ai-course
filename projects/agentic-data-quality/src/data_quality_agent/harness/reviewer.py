@@ -18,6 +18,7 @@ TOOLS = (
     "get_quality_findings",
     "get_run_summary",
     "get_delivery_status",
+    "get_relevant_memory",
     # Orders Platform (MCP)
     "get_dataset_contract",
 )

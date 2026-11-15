@@ -14,6 +14,7 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
+from data_quality_agent.persistence.memory import MemoryRepository
 from data_quality_agent.persistence.models import RunSummary
 from data_quality_agent.persistence.repository import RunRepository
 from data_quality_agent.simulator.models import EventKind, LogLevel, PipelineDefinition, StageName
@@ -27,9 +28,12 @@ class ToolInputError(ValueError):
 
 
 class DataQualityTools:
-    def __init__(self, runs: RunRepository, runbooks: RunbookLibrary | None = None) -> None:
+    def __init__(
+        self, runs: RunRepository, runbooks: RunbookLibrary | None = None, *, author: str = "system",
+    ) -> None:
         self.runs = runs
         self.runbooks = runbooks or RunbookLibrary()
+        self.author = author
 
     # Pipeline and run state ------------------------------------------------------------------
 
@@ -160,6 +164,33 @@ class DataQualityTools:
             "records_in_batch": summary.record_count,
             "records_loaded": loaded,
             "verified": summary.status == "succeeded" and loaded == summary.record_count,
+        }
+
+    def get_relevant_memory(
+        self, run_id: str, limit: Annotated[int, Field(ge=1, le=10)] = 5,
+    ) -> dict[str, Any]:
+        """Short-lived evidence-linked context from previous incidents in this pipeline."""
+        summary = self._summary(run_id)
+        memories = MemoryRepository(self.runs.database).active_for_pipeline(summary.pipeline_id, limit=limit)
+        return {"run_id": run_id, "memories": MemoryRepository.as_evidence(memories)}
+
+    def remember_incident_context(
+        self,
+        run_id: str,
+        content: Annotated[str, Field(min_length=1, max_length=500)],
+        source_ref: Annotated[str, Field(min_length=6, max_length=32)],
+        valid_days: Annotated[int, Field(ge=1, le=365)] = 30,
+    ) -> dict[str, Any]:
+        """Save a concise, non-personal, evidence-linked finding for this pipeline with an expiry."""
+        memory = MemoryRepository(self.runs.database).add(
+            run_id=run_id, content=content, source_ref=source_ref,
+            created_by=self.author, valid_days=valid_days,
+        )
+        return {
+            "ref": f"memory:{memory.memory_id}",
+            "pipeline_id": memory.pipeline_id,
+            "source_ref": memory.source_ref,
+            "valid_until": memory.valid_until.isoformat(),
         }
 
     # Data quality ----------------------------------------------------------------------------

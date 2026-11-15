@@ -84,6 +84,8 @@ class IncidentAction(BaseModel):
     status: Literal["running", "executed", "failed"]
     detail: str
     result_run_id: str | None
+    execution_run_id: str | None
+    request: dict[str, Any]
     requested_at: datetime
     finished_at: datetime | None
 
@@ -97,3 +99,26 @@ class FailedRecord(BaseModel):
     rule_ids: list[str]
     record: dict[str, Any]
     status: Literal["held", "released", "discarded"]
+
+
+class FailedRecordApproval(BaseModel):
+    approval_id: int
+    source_run_id: str
+    position: int
+    target_status: Literal["released", "discarded"]
+    reason: str
+    requested_by: str
+    decided_by: str | None
+    status: Literal["pending", "executed", "rejected"]
+    requested_at: datetime
+    finished_at: datetime | None
+
+
+class IncidentMemory(BaseModel):
+    memory_id: int
+    pipeline_id: str
+    content: str
+    source_ref: str
+    created_by: str
+    created_at: datetime
+    valid_until: datetime

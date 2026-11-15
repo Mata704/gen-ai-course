@@ -51,7 +51,7 @@ flowchart TD
     end
 
     subgraph TL[Camada de tools - controlada por hooks em código]
-        HB{Hook antes da tool:<br/>tool permitida a este agente<br/>e a este utilizador?}
+        HB{Hook antes da tool:<br/>tool permitida a este agente<br/>e política satisfeita?}
         TP[Tools locais - base SQLite local:<br/>execuções, logs, regras, registos, incidentes, runbooks]
         MCP[Servidor MCP - plataforma da origem, só leitura:<br/>contrato, alterações de esquema, estado da origem, clientes]
         HA[Hook depois da tool:<br/>auditoria e guardrails]
@@ -144,8 +144,8 @@ sequenceDiagram
 
 | Hook | Quando corre | O que verifica |
 |---|---|---|
-| Antes da tool | Antes de cada chamada | A tool está na lista deste agente? Se for MCP, a sua descrição é a que foi revista? O utilizador tem permissão? A ação exige aprovação? Os argumentos são válidos? |
-| Depois da tool | Depois de cada chamada | Regista a chamada para auditoria e passa o resultado pelos guardrails (por exemplo, dados pessoais ou instruções escondidas no texto vindo da plataforma da origem). |
+| Antes da tool | Antes de cada chamada | A tool está na allowlist deste agente? Se for MCP, a descrição foi revista? O orçamento e os argumentos são válidos? A política da ação permite executá-la? |
+| Depois da tool | Depois de cada chamada | Regista a chamada e passa resultado e erros pelos guardrails: redação de e-mail, telefone e NIF reconhecidos, limite de tamanho e marca de conteúdo não confiável. |
 | Fim da execução | Antes da resposta final | A conclusão tem evidência de tools? Uma recuperação só é aceite se a revalidação a confirmar. |
 
 Cada sub-agent só tem acesso às tools de que precisa, locais e MCP, definidas
@@ -258,28 +258,24 @@ nas tools; uma resolução exige qualidade e entrega verificadas.
 
 ### Passo 5 — Decidir se é possível agir
 
-O sub-agent de remediação pode pedir uma ação simulada. Antes de a executar, o
-hook antes da tool:
+O agente de remediação pode pedir retry ou quarentena automáticos. O serviço
+verifica em código o tipo/status da execução, orçamento de retry, estado da
+origem ou limite e regras da pipeline. A aprovação humana não é usada para
+contornar estas políticas.
 
-1. Verifica se o utilizador tem permissão para a ação.
-2. Se a ação exigir aprovação, apresenta o pedido a uma pessoa.
-3. Só executa se as permissões e, quando necessária, a aprovação forem válidas.
-
-Uma aprovação não substitui a permissão necessária. Se a ação for recusada ou
-rejeitada, o motivo e a decisão deverão ficar registados.
-
-Por exemplo, um problema de ingestão poderá exigir **repetir a leitura da
-origem quando esta recuperar** ou **reprocessar um lote depois de corrigido**.
-Isolar registos inválidos também poderá ser uma opção, mas só com uma política
-explícita: eliminar registos não equivale automaticamente a resolver o problema.
-Estas ações ainda serão implementadas; os agentes não vão inventar dados em
-falta nem ignorar as regras para fazer o lote passar.
+Libertar ou descartar uma linha falhada segue outro fluxo: uma pessoa cria um
+pedido na interface e uma pessoa diferente decide. Ao aprovar, o serviço volta
+a verificar que a linha continua `held` e só altera a disposição na tabela
+`failed_records`; não carrega a linha no warehouse. A interface local não tem
+autenticação, por isso os nomes são apenas registo declarado, não prova de
+identidade. Alterações de regras ainda não são suportadas.
 
 ### Passo 6 — Confirmar o resultado
 
-Depois da ação, as etapas afetadas serão repetidas e o mesmo bloco de Data
-Quality terá de passar novamente. O revisor deverá consultar essa evidência;
-só então a pipeline poderá carregar os dados e apresentar a recuperação.
+Depois do retry ou da quarentena, a pipeline determinística volta a correr e o
+mesmo bloco de Data Quality tem de passar novamente. O revisor consulta essa
+evidência; só então a pipeline pode carregar os dados e apresentar a
+recuperação.
 
 Se a ação falhar, se os dados continuarem incorretos ou se não for possível
 confirmar o efeito, o problema permanecerá por resolver.
@@ -334,8 +330,8 @@ aprovações ainda não estão implementadas.
 | 2. Persistência e avaliação | Guardar execuções, incidentes e contexto bloqueado; criar casos de avaliação reproduzíveis. | **Persistência disponível**; casos de avaliação por fazer. |
 | 3. Ferramentas e runbooks | Disponibilizar consultas, procedimentos e ações simuladas verificáveis. | **Consultas, runbooks e duas ações automáticas disponíveis.** |
 | 4. Agentes | Criar o orquestrador e os sub-agents especialistas com PydanticAI. | **Disponíveis**, com o harness em `harness/` (um ficheiro por agente), tools filtradas, outputs tipados e verificação de evidências. |
-| 5. Segurança e retoma | Aplicar permissões, aprovações, registo de decisões e recuperação após interrupções. | Allowlist por agente, limite de chamadas, políticas das ações em código e auditoria disponíveis; aprovações e retoma por fazer. |
-| 6. MCP e memória | Integrar ferramentas MCP locais e memória com origem e validade. | **Servidor MCP da plataforma da origem disponível**; memória por fazer. |
+| 5. Segurança e retoma | Aplicar permissões, aprovações, registo de decisões e recuperação após interrupções. | **Allowlist, políticas, aprovações de disposição e retoma idempotente disponíveis**; autenticação real por fazer. |
+| 6. MCP e memória | Integrar ferramentas MCP locais e memória com origem e validade. | **Servidor MCP e memória por pipeline com proveniência/expiração disponíveis.** |
 | 7. Interface e avaliação completa | Interface Streamlit para iniciar, escolher cenários e ver logs e métricas; testar o fluxo de ponta a ponta. | **Interface e correções manuais disponíveis**; avaliação dos modelos por fazer. |
 
 As fases serão validadas com testes à medida que forem construídas. A descrição
@@ -355,8 +351,10 @@ Já existem os agentes, a investigação de incidentes e a submissão de
 correções no frontend, com ficheiro ou texto JSON. O agente de remediação já
 pode repetir uma ingestão falhada quando a origem está disponível e pôr em
 quarentena poucos registos inválidos (até 5 %), entregando o resto; ambas as
-ações criam uma nova tentativa que volta a passar pelo gate. Ainda não existem
-ações com aprovação humana nem retoma após interrupção.
+ações criam uma nova tentativa que volta a passar pelo gate. A interface
+também permite retomar ações ou investigações interrompidas e criar pedidos de
+aprovação de disposição de linhas. Durante a investigação, os especialistas
+consultam memória ativa da pipeline e podem guardar notas com evidência/validade.
 
 O projeto usa dados fictícios. Os agentes usam a configuração OpenAI do curso
 e estão desligados por omissão: ativá-los implica enviar ao fornecedor

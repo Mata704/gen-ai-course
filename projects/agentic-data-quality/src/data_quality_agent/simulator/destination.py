@@ -51,7 +51,7 @@ class SQLiteDestination:
         with closing(sqlite3.connect(self.path, timeout=10)) as connection, connection:
             connection.execute(SCHEMA)
             connection.executemany(
-                "INSERT INTO pipeline_output "
+                "INSERT OR REPLACE INTO pipeline_output "
                 "(run_id, pipeline_id, scenario_id, position, record_json) VALUES (?, ?, ?, ?, ?)",
                 [
                     (run_id, pipeline_id, scenario_id, index, json.dumps(record, allow_nan=False))
@@ -62,6 +62,13 @@ class SQLiteDestination:
             if output_records != records:
                 raise DeliveryVerificationError("SQLite delivery could not be verified; batch rolled back.")
         return output_records
+
+    def delete_run(self, run_id: str) -> None:
+        """Remove an incomplete run's prior delivery before replaying that same idempotency key."""
+        if not self.path.is_file():
+            return
+        with closing(sqlite3.connect(self.path, timeout=10)) as connection, connection:
+            connection.execute("DELETE FROM pipeline_output WHERE run_id = ?", (run_id,))
 
     def read(self, run_id: str) -> list[dict[str, Any]]:
         """Records delivered by a run; empty if nothing was ever loaded here. Never creates the file."""

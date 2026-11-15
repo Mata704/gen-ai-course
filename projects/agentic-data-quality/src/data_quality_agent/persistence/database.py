@@ -180,6 +180,41 @@ MIGRATIONS: list[str] = [
     ALTER TABLE failed_records ADD COLUMN status TEXT NOT NULL DEFAULT 'held'
         CHECK (status IN ('held', 'released', 'discarded'));
     """,
+    # 7: durable approvals, action recovery keys and evidence-linked memory.
+    """
+    ALTER TABLE incident_actions ADD COLUMN execution_run_id TEXT;
+    ALTER TABLE incident_actions ADD COLUMN request_json TEXT NOT NULL DEFAULT '{}';
+    CREATE UNIQUE INDEX action_execution_run ON incident_actions (execution_run_id)
+        WHERE execution_run_id IS NOT NULL;
+    CREATE TABLE failed_record_approvals (
+        approval_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_run_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        target_status TEXT NOT NULL CHECK (target_status IN ('released', 'discarded')),
+        reason TEXT NOT NULL,
+        requested_by TEXT NOT NULL,
+        decided_by TEXT,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'executed', 'rejected')),
+        requested_at TEXT NOT NULL,
+        finished_at TEXT,
+        FOREIGN KEY (source_run_id, position) REFERENCES failed_records (source_run_id, position)
+    );
+    CREATE UNIQUE INDEX one_pending_record_approval
+        ON failed_record_approvals (source_run_id, position) WHERE status = 'pending';
+    CREATE TABLE incident_memories (
+        memory_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pipeline_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        source_ref TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        valid_until TEXT NOT NULL
+    );
+    CREATE INDEX active_memory_by_pipeline
+        ON incident_memories (pipeline_id, valid_until);
+    CREATE UNIQUE INDEX unique_incident_memory
+        ON incident_memories (pipeline_id, source_ref, content);
+    """,
 ]
 
 

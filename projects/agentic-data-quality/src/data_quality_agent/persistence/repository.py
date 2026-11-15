@@ -86,9 +86,31 @@ class RunRepository:
         with self.database.transaction() as connection:
             connection.execute(
                 "INSERT INTO pipeline_runs (run_id, pipeline_id, pipeline_version, scenario_id, seed, "
-                "status, destination, started_at) VALUES (?, ?, ?, ?, ?, 'running', ?, ?)",
+                "status, destination, started_at) VALUES (?, ?, ?, ?, ?, 'running', ?, ?) "
+                "ON CONFLICT (run_id) DO UPDATE SET pipeline_id = excluded.pipeline_id, "
+                "pipeline_version = excluded.pipeline_version, scenario_id = excluded.scenario_id, "
+                "seed = excluded.seed, status = 'running', quality_status = 'not_run', record_count = 0, "
+                "delay_minutes = 0, observed_columns_json = '[]', errors_json = '[]', "
+                "destination = excluded.destination, started_at = excluded.started_at, finished_at = NULL",
                 (run_id, pipeline_id, pipeline_version, scenario_id, seed, destination, started_at.isoformat()),
             )
+
+    def reset_interrupted_run(self, run_id: str) -> bool:
+        """Clear partial control history so a deterministic replay can reuse the same run id."""
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT status FROM pipeline_runs WHERE run_id = ?", (run_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            if row["status"] not in ("running", "failed"):
+                raise ValueError(f"Run '{run_id}' is not interrupted and cannot be replayed.")
+            connection.execute("DELETE FROM run_events WHERE run_id = ?", (run_id,))
+            connection.execute("DELETE FROM run_stages WHERE run_id = ?", (run_id,))
+            connection.execute("DELETE FROM run_records WHERE run_id = ?", (run_id,))
+            connection.execute("DELETE FROM quality_findings WHERE run_id = ?", (run_id,))
+            connection.execute("DELETE FROM incidents WHERE run_id = ?", (run_id,))
+            return True
 
     def append_event(self, event: PipelineEvent) -> None:
         with self.database.transaction() as connection:

@@ -133,10 +133,10 @@ O CLI devolve código 0 quando conclui a simulação, mesmo que o cenário resul
 em bloqueio ou falha. Consulta `pipeline_status` no JSON. Código 2 indica erro
 de argumentos, entrada/configuração inválida ou falha da investigação dos agentes.
 
-**Ainda por implementar:** ações que exijam aprovação humana, retoma após
-interrupção e memória. A correção manual e as duas ações automáticas
-(ver [Ações automáticas](#ações-automáticas)) reexecutam o gate numa nova
-tentativa do mesmo incidente.
+As ações automáticas reexecutam o gate numa nova tentativa do mesmo incidente.
+O projeto também permite retomar ações interrompidas com a mesma chave de
+execução, pedir aprovação humana para decisões sobre linhas falhadas e guardar
+memória curta com evidência e validade.
 
 ## Agentes PydanticAI
 
@@ -218,8 +218,21 @@ bloco `remediation` da sua
   verifica-a; `resolved` continua a exigir a verificação em código.
 - Os registos falhados ficam em `failed_records`, separados do warehouse, com
   estados `held`, `released` ou `discarded` (inicialmente `held`); aparecem no
-  frontend, na secção **Ações automáticas**, apenas para revisão humana. A
-  alteração desses estados ainda não tem fluxo na interface.
+  frontend, na secção **Ações automáticas**, apenas para revisão humana.
+- Libertar ou descartar uma linha exige um pedido pendente e uma decisão de
+  outra pessoa na interface. A política volta a validar que a linha continua
+  `held`; a aprovação não autoriza por si só nem carrega a linha no warehouse.
+  `Descartar` é uma disposição auditada, não uma eliminação física. A UI não
+  autentica pessoas: os nomes indicados não provam a identidade.
+- Se o processo for interrompido durante uma ação, **Retomar ações
+  interrompidas** reutiliza o mesmo `run_id` idempotente; só sessões sem
+  atividade há pelo menos 10 minutos podem ser retomadas.
+- Os agentes podem consultar memória ativa da pipeline. O diagnóstico pode
+  guardar uma nota curta apenas com referência a uma tool bem-sucedida e prazo
+  (1–365 dias); o código rejeita dados pessoais detetados.
+- O hook de saída mascara e-mails, telefones e NIFs portugueses detetados antes
+  de devolver resultados aos agentes. É um filtro por padrões, não um sistema
+  completo de deteção de identidade.
 
 Cenários de demonstração:
 
@@ -231,8 +244,7 @@ uv run --locked data-quality-sim --agents --scenario .\src\data_quality_agent\si
 O segundo tem 2 registos inválidos em 40 (5 %), por isso a quarentena é
 permitida; em `quality_issues.json` (5 em 41) é recusada.
 
-Ainda não existem ações que exijam aprovação humana (por exemplo, alterar uma
-regra) nem a retoma automática de uma ação interrompida a meio.
+Alterar regras ainda não é uma ação disponível, mesmo com aprovação.
 ## Corrigir um lote no mesmo incidente
 
 1. Seleciona uma execução com incidente no histórico.
