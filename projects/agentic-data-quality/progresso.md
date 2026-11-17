@@ -548,6 +548,56 @@ alteração de regras e validação mais ampla do filtro de dados pessoais.
   bases temporárias isoladas e acesso à OpenAI desativado nesse processo.
 - Compilação, build e verificação de whitespace concluídos.
 
+## 2026-11-16 — Orquestração adaptativa com dois especialistas
+
+### Feito
+
+- Quality e Diagnosis combinados em Investigation, com as mesmas tools de
+  consulta e memória; Remediation mantém as ações sujeitas às políticas existentes.
+- O Reviewer deixa de ser agente. A recuperação é confirmada por código:
+  sucesso, qualidade aprovada, ausência de findings e entrega relida igual ao lote
+  aprovado. Uma tentativa já recuperada não requer chamadas ao modelo.
+- Relatórios estruturados indicam decisão, evidência em falta e pergunta de
+  seguimento. O orquestrador encaminha a pergunta para Investigation e devolve a
+  resposta ao Remediation, preservando o contexto da tentativa.
+- Após uma ação sem recuperação, os novos findings exigem nova investigação.
+  Só Remediation tem tools de ação; nenhuma aprovação ou política foi relaxada.
+- Delegações sequenciais, tarefas repetidas bloqueadas e limite de duas delegações
+  sem evidência nova nem mudança de tentativa, além dos limites gerais existentes.
+  IDs de auditoria novos não contam, por si só, como evidência nova. Recusas ficam
+  nos passos e logs, com motivo.
+- Avaliação atualizada para os dois papéis e o evento de verificação em código.
+  O histórico anterior continua legível; não há migração destrutiva de dados.
+
+### Validação
+
+- Testes com modelos locais cobrem seguimento por evidência em falta, recuperação
+  determinística apesar do estado proposto pelo modelo, nova falha após quarentena,
+  bloqueio de repetição e paragem sem progresso.
+- Compilação e build do pacote concluídos; suite completa com 108 testes.
+
+## 2026-11-16 — Confirmação Recovery à saída do orquestrador
+
+### Feito
+
+- A confirmação final passa para o serviço, depois da resposta do orquestrador
+  e antes de guardar o resultado da sessão e atualizar o incidente/UI.
+- O hook `confirm_recovery` relê o resultado da tentativa atual, incluindo os
+  dados do destino. Recusa `resolved` sem prova; se os critérios forem cumpridos,
+  confirma `resolved` sem depender da classificação do modelo.
+- O passo `verification` vem depois da resposta do orquestrador e regista os
+  estados proposto e confirmado, ou o erro explícito de verificação.
+- As verificações intermédias continuam a orientar o ciclo adaptativo, mas não
+  substituem esta confirmação final. Tentativas já recuperadas mantêm o atalho
+  sem chamadas ao modelo e passam pelo mesmo hook de saída.
+
+### Validação
+
+- Testes locais confirmam a ordem dos passos, recusa de falsas resoluções e
+  deteção de perda da entrega entre a resposta do orquestrador e a confirmação.
+- 42 testes relacionados passaram (agentes, avaliação, UI e ações), sem chamadas
+  reais à OpenAI. Compilação e verificação de whitespace concluídas.
+
 ## Próximos registos
 
 Adicionar uma nova secção datada quando um marco for concluído. Atualizar este

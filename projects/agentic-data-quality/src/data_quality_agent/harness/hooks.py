@@ -52,6 +52,7 @@ class ToolSession:
     run_id: str | None = None
     max_calls: int = MAX_CALLS_PER_SESSION
     calls: int = 0
+    action_pause_reason: str | None = None
 
 
 def before_tool(
@@ -67,6 +68,8 @@ def before_tool(
         return "This tool session is scoped to its current run."
     if spec.action and not actions_enabled:
         return "Automatic actions are only available during an incident investigation."
+    if spec.action and session.action_pause_reason is not None:
+        return session.action_pause_reason
     if spec.source == "mcp":
         if platform is None:
             return "The Orders Platform MCP server is not connected."

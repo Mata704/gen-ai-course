@@ -44,10 +44,8 @@ flowchart TD
 
     subgraph AG[Intervenção dos agentes]
         G((Orquestrador))
-        G <-->|tarefa / resultado| QA[Sub-agent<br/>Qualidade dos dados]
-        G <-->|tarefa / resultado| PD[Sub-agent<br/>Diagnóstico da pipeline]
+        G <-->|tarefa / evidência| QA[Sub-agent<br/>Investigation: qualidade e diagnóstico]
         G <-->|tarefa / pedido de ação| RM[Sub-agent<br/>Remediação]
-        G <-->|tarefa / veredicto| RV[Sub-agent<br/>Revisor]
     end
 
     subgraph TL[Camada de tools - controlada por hooks em código]
@@ -58,8 +56,6 @@ flowchart TD
     end
 
     QA -->|chamada de tool| HB
-    PD -->|chamada de tool| HB
-    RV -->|chamada de tool| HB
     RM -->|pedido de ação| HB
     HB -- Consulta permitida --> TP
     HB -- Consulta permitida --> MCP
@@ -80,8 +76,8 @@ flowchart TD
     P -->|nova evidência| G
     G --> HF{Hook no fim da execução:<br/>a conclusão tem evidência?}
     HF -- Não --> G
-    HF -- Sim --> Q{Recuperação confirmada?}
-    Q -- Sim --> LOAD
+    HF -- Sim --> Q{Qualidade e entrega confirmadas por código?}
+    Q -- Sim --> E
     Q -- Não, sem mais opções --> S
 ```
 
@@ -100,21 +96,18 @@ Há **três bases de dados com papéis diferentes**:
 
 O orquestrador **não segue uma ordem fixa**. Funciona como um coordenador:
 recebe o incidente, decide que sub-agents chamar, recebe os resultados e decide
-o passo seguinte. Pode chamar vários sub-agents em paralelo, voltar a chamar um
-deles com mais contexto ou terminar quando não houver ações possíveis.
+o passo seguinte. Começa por Investigation e consulta Remediation; pode pedir
+uma investigação focada quando falta evidência ou após novos findings.
 
 ```mermaid
 flowchart LR
     I[Incidente] --> O((Orquestrador))
-    O -- "1. em paralelo" --> QA[Qualidade dos dados]
-    O -- "1. em paralelo" --> PD[Diagnóstico da pipeline]
-    QA -- achados --> O
-    PD -- causa provável --> O
-    O -- "2. se houver ação possível" --> RM[Remediação]
-    RM -- pedido de ação --> O
-    O -- "3. depois da revalidação" --> RV[Revisor]
-    RV -- veredicto --> O
-    O --> R[Decisão final]
+    O --> QA[Investigation]
+    QA -- achados e causas --> O
+    O --> RM[Remediation]
+    RM -- ação ou evidência em falta --> O
+    O -- pergunta focada --> QA
+    O --> R[Verificação final determinística]
 ```
 
 Os números indicam um percurso típico, não uma sequência obrigatória. Os
@@ -155,10 +148,8 @@ agentes: só regras, contagens, posições de linhas, perfis e logs.
 
 | Sub-agent | Tools locais (o que aconteceu na pipeline) | Tools MCP (o que diz a origem) | Estado |
 |---|---|---|---|
-| Qualidade dos dados | Regras, resultados das regras (com posições das linhas), perfil do lote e runbook. | Contrato do dataset e alterações de esquema. | Disponível |
-| Diagnóstico da pipeline | Resumo e logs da execução, execuções recentes, comparação com o último sucesso, incidente e runbook. | Contrato, alterações de esquema, estado da origem e incidentes da origem. | Disponível |
+| Investigation | Regras, findings, perfil, resumo, logs, histórico, comparação com sucesso, incidente, runbook e memória. | Contrato, alterações de esquema, estado da origem e incidentes da origem. | Disponível |
 | Remediação | Incidente e runbook; ações `retry_ingestion` (repetir a leitura) e `quarantine_failed_records` (reter poucos registos inválidos e entregar o resto). | Estado da origem e incidentes da origem. | Disponível; a política das ações é verificada em código |
-| Revisor | Resultados das regras, resumo da execução e estado do destino. | Contrato do dataset. | Disponível |
 | Orquestrador | Nenhuma tool de dados; recebe um resumo curto do incidente e delega. | — | Disponível |
 
 Uma falha na pipeline ou numa ferramenta também deve ser apresentada como tal.
@@ -204,23 +195,21 @@ coordena o trabalho — vai gerir uma equipa de **sub-agents** especialistas:
 
 | Sub-agent | O que deverá fazer |
 |---|---|
-| Qualidade dos dados | Analisar regras, registos e métricas para perceber o que está incorreto. |
-| Diagnóstico da pipeline | Consultar estado, logs e dependências para investigar uma causa provável. |
+| Investigation | Combinar a análise de qualidade com logs, histórico e contexto da origem; explicar causas e incertezas. |
 | Remediação | Solicitar uma ação simulada permitida, quando houver informação suficiente. |
-| Revisor | Verificar o estado depois da ação e confirmar se o problema ficou resolvido. |
 
 Como o orquestrador gere estes sub-agents:
 
-1. **Decide quem chamar.** Uma origem indisponível pode precisar só do
-   diagnóstico; registos duplicados precisam da análise de qualidade.
+1. **Pede a investigação inicial.** Investigation analisa a tentativa atual.
 2. **Delega tarefas concretas.** Cada sub-agent recebe apenas a tarefa, a
    evidência necessária e as ferramentas que pode usar.
-3. **Trabalha em paralelo quando faz sentido.** Qualidade e diagnóstico podem
-   investigar ao mesmo tempo.
+3. **Consulta Remediation.** Este indica uma ação, correção humana ou evidência
+   em falta, com uma pergunta concreta para Investigation.
 4. **Junta e avalia os resultados.** Se faltar evidência ou houver conclusões
    contraditórias, volta a delegar com perguntas mais precisas.
-5. **Decide o passo seguinte.** Pede uma ação à remediação, pede confirmação
-   ao revisor, ou termina com o problema por resolver.
+5. **Controla o progresso.** Após uma ação falhada, investiga os novos findings.
+   O código bloqueia tarefas repetidas e novas delegações após duas sem progresso.
+   A recuperação é confirmada em código, sem um agente revisor.
 
 O orquestrador não executa ações nem altera dados diretamente. Os sub-agents de
 investigação só consultam informação. Mesmo quando o orquestrador decide
@@ -280,9 +269,13 @@ ao nível das linhas nem desligar regras.
 ### Passo 6 — Confirmar o resultado
 
 Depois do retry ou da quarentena, a pipeline determinística volta a correr e o
-mesmo bloco de Data Quality tem de passar novamente. O revisor consulta essa
-evidência; só então a pipeline pode carregar os dados e apresentar a
-recuperação.
+mesmo bloco de Data Quality tem de passar novamente antes de carregar os dados.
+A recuperação exige sucesso, qualidade aprovada, ausência de findings e dados
+relidos do destino iguais aos aprovados. Não depende do parecer de um modelo.
+À saída do orquestrador, antes de persistir o resultado final e o mostrar na UI,
+o serviço volta a ler essa evidência e confirma a resposta. O passo `verification`
+guarda o estado proposto e o confirmado. Uma proposta `resolved` sem recuperação
+é recusada e a investigação fica com erro explícito, nunca como resolvida.
 
 Se a ação falhar, se os dados continuarem incorretos ou se não for possível
 confirmar o efeito, o problema permanecerá por resolver.
@@ -333,10 +326,10 @@ já foi executada antes de tentar repeti-la.
 2. Uma regra identifica que existem identificadores de encomenda repetidos.
 3. A pipeline bloqueia o carregamento e emite um incidente com a regra e os
    registos afetados.
-4. O orquestrador delega, em paralelo, a análise dos dados ao sub-agent de
-   qualidade e a análise da execução ao sub-agent de diagnóstico.
-5. Os sub-agents consultam evidências e runbooks e devolvem os resultados ao
-   orquestrador, que os junta e decide se há uma ação possível.
+4. O orquestrador delega a análise de qualidade e causas ao Investigation.
+5. Este consulta evidências e runbooks e devolve os resultados ao orquestrador.
+   Remediation pode pedir evidência adicional; o orquestrador encaminha a pergunta
+   focada e devolve a resposta antes de nova decisão.
 6. Se houver, o orquestrador delega ao sub-agent de remediação a preparação de
    um pedido de ação. Retry e quarentena são executados apenas quando a
    política permitir; disposição de linhas e alterações de thresholds exigem
@@ -344,7 +337,7 @@ já foi executada antes de tentar repeti-la.
 7. O sistema verifica a permissão em código. Aprovação humana não substitui
    essa autorização.
 8. Se a ação for autorizada, executa-a e volta a processar e verificar o lote.
-9. O orquestrador pede ao sub-agent revisor que avalie a nova evidência. Se
+9. O código verifica a qualidade e os dados relidos do destino. Se
    os dados passarem as regras e o carregamento for confirmado, o incidente
    fica resolvido; caso contrário, o orquestrador pode tentar outra abordagem
    ou manter o carregamento bloqueado e explicar o que continua por resolver.

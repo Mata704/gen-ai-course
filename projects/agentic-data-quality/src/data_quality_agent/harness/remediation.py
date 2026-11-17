@@ -16,7 +16,10 @@ Use an action only when the evidence supports it. If the policy denies it, repor
 After an action, the result gives the new attempt and its status: report them, with the action ref
 in actions_taken. Any other fix (a corrected batch in the frontend, a rule change) is a
 recommendation for people: you cannot approve it, bypass rules or modify the source platform.
-recovery_confirmed is false.
+If a specific fact is missing to choose safely, return decision=needs_evidence, missing_evidence
+and a focused follow_up_question for investigation. Do not guess or repeat a denied action.
+Otherwise return action_executed with actions_taken, awaiting_correction for a human correction,
+or unresolved when no safe next step exists. Never declare recovery: code verifies the result.
 """
 
 ACTIONS = ("retry_ingestion", "quarantine_failed_records")

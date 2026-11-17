@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai import ModelRetry
 from pydantic_ai.usage import RequestUsage
 
 from data_quality_agent.evaluation import evaluate_cases
@@ -32,6 +33,7 @@ def content(value: Any) -> dict[str, Any]:
 
 def scripted_model(
     *, false_resolution: bool = False, action: str | None = None, seen: list[str] | None = None,
+    follow_up: bool = False,
 ) -> FunctionModel:
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         if seen is not None:
@@ -58,63 +60,70 @@ def scripted_model(
         assert match
         run_id = match.group(1)
         output_name = info.output_tools[0].name
-        if "ask_quality" in names:
-            successful = "status: succeeded" in prompt
-            if successful and "ask_reviewer" not in returned:
-                return ModelResponse(parts=[ToolCallPart("ask_reviewer", {"task": "Verify the corrected attempt."})])
-            if not successful and "ask_quality" not in returned:
-                return ModelResponse(parts=[
-                    ToolCallPart("ask_quality", {"task": "Read the findings and source contract."}),
-                    ToolCallPart("ask_diagnosis", {"task": "Check the pipeline logs."}),
-                ])
-            if not successful and "ask_remediation" not in returned:
+        if "ask_investigation" in names:
+            if "ask_investigation" not in returned:
+                return ModelResponse(parts=[ToolCallPart(
+                    "ask_investigation", {"task": "Read the findings, logs and source contract."},
+                )])
+            if returned.get("ask_remediation", {}).get("decision") == "needs_evidence":
+                if returned["ask_investigation"]["summary"] != "Source availability checked.":
+                    return ModelResponse(parts=[ToolCallPart(
+                        "ask_investigation", {"task": "Check current source availability."},
+                    )])
+                return ModelResponse(parts=[ToolCallPart(
+                    "ask_remediation", {"task": "Use the newly checked source availability."},
+                )])
+            if "ask_remediation" not in returned:
                 return ModelResponse(parts=[ToolCallPart("ask_remediation", {"task": json.dumps(returned)})])
             actions = returned.get("ask_remediation", {}).get("actions_taken", [])
-            if actions and "ask_reviewer" not in returned:
-                return ModelResponse(parts=[ToolCallPart("ask_reviewer", {"task": "Verify the new attempt."})])
-            recovered = successful or returned.get("ask_reviewer", {}).get("recovery_confirmed", False)
             return ModelResponse(parts=[ToolCallPart(output_name, {
-                "status": "resolved" if recovered or false_resolution else "awaiting_correction",
-                "summary": "Recovery checked." if recovered else "A corrected batch is needed.",
+                "status": "resolved" if false_resolution else "awaiting_correction",
+                "summary": "Action result returned." if actions else "A corrected batch is needed.",
                 "probable_cause": "Invalid source records.",
                 "evidence_refs": [ref for report in returned.values() for ref in report["evidence_refs"]],
                 "actions_taken": actions,
-                "next_step": "Completed." if recovered else "Submit corrected JSON.",
+                "next_step": "Check action result." if actions else "Submit corrected JSON.",
             })])
 
         if "get_batch_profile" in names:
-            role, calls = "quality", [
+            role, calls = "investigation", [
                 ("get_quality_findings", {"run_id": run_id}),
+                ("get_run_logs", {"run_id": run_id}),
                 ("get_dataset_contract", {"dataset_id": "sales.orders"}),
             ]
-        elif "get_run_logs" in names:
-            role, calls = "diagnosis", [("get_run_logs", {"run_id": run_id})]
-        elif "get_delivery_status" in names:
-            role, calls = "reviewer", [
-                ("get_quality_findings", {"run_id": run_id}),
-                ("get_delivery_status", {"run_id": run_id}),
-            ]
+            if "Task: Check current source availability." in prompt:
+                calls = [("get_source_status", {"system_id": "orders-export-api"})]
         else:
             role, calls = "remediation", [("get_incident", {"run_id": run_id})]
-            if action is not None and "get_incident" in returned:
+            needs_evidence = follow_up and "Source availability checked." not in prompt
+            if action is not None and "get_incident" in returned and not needs_evidence:
                 calls.append((action, {"run_id": run_id}))
         missing = [(name, args) for name, args in calls if name not in returned]
         if missing:
             return ModelResponse(parts=[ToolCallPart(name, args) for name, args in missing])
+        requesting = role == "remediation" and follow_up and "Source availability checked." not in prompt
         return ModelResponse(parts=[ToolCallPart(output_name, {
-            "role": role, "summary": "Observed results from tools.",
+            "role": role, "summary": (
+                "Source availability checked." if "get_source_status" in returned else "Observed results from tools."
+            ),
             "evidence_refs": [value["tool_ref"] for value in returned.values() if "tool_ref" in value],
-            "recommendation": "Submit a corrected batch." if role != "reviewer" else "Delivery verified.",
+            "recommendation": "Submit a corrected batch.",
             "actions_taken": [
                 value["ref"] for value in returned.values() if value.get("status") == "executed"
             ],
-            "recovery_confirmed": role == "reviewer" and returned["get_delivery_status"]["verified"],
+            "decision": (
+                "complete" if role == "investigation" else "needs_evidence" if requesting else
+                "action_executed" if any(v.get("status") == "executed" for v in returned.values())
+                else "awaiting_correction"
+            ),
+            "missing_evidence": ["Current source availability"] if requesting else [],
+            "follow_up_question": "Is the source currently available?" if requesting else None,
         })])
 
     return FunctionModel(respond)
 
 
-def test_agents_delegate_use_tools_and_review_the_same_incident(tmp_path: Path) -> None:
+def test_agents_delegate_and_code_verifies_the_same_incident(tmp_path: Path) -> None:
     service = PipelineService(tmp_path / "history.sqlite3")
     failed = service.run(SCENARIOS_DIR / "quality_issues.json", agent_model=scripted_model())
     workflow = service.incidents.get_for_run(failed.run_id)
@@ -122,7 +131,7 @@ def test_agents_delegate_use_tools_and_review_the_same_incident(tmp_path: Path) 
     session = service.incidents.list_sessions(failed.run_id)[0]
     assert session.status == "completed"
     assert {step.agent for step in service.incidents.list_steps(session.session_id)} == {
-        "orchestrator", "quality", "diagnosis", "remediation",
+        "orchestrator", "investigation", "remediation", "verification",
     }
     calls = AuditRepository(service.database).list_calls(run_id=failed.run_id)
     assert any(call.tool == "get_dataset_contract" and call.source == "mcp" for call in calls)
@@ -135,9 +144,8 @@ def test_agents_delegate_use_tools_and_review_the_same_incident(tmp_path: Path) 
     assert workflow.incident_id == failed.run_id
     assert workflow.status == "resolved"
     assert service.incidents.list_sessions(corrected.run_id)[0].outcome["status"] == "resolved"
-    assert {call.tool for call in AuditRepository(service.database).list_calls(run_id=corrected.run_id)} >= {
-        "get_quality_findings", "get_delivery_status",
-    }
+    assert AuditRepository(service.database).list_calls(run_id=corrected.run_id) == []
+    assert TelemetryRepository(service.database).list_calls(run_ids=[corrected.run_id]) == []
 
 
 def test_model_cannot_resolve_an_unrecovered_incident(tmp_path: Path) -> None:
@@ -149,7 +157,10 @@ def test_model_cannot_resolve_an_unrecovered_incident(tmp_path: Path) -> None:
     assert service.incidents.get_for_run(summary.run_id).status == "analysis_failed"
     session = service.incidents.list_sessions(summary.run_id)[0]
     assert session.status == "failed"
-    assert "UnexpectedModelBehavior" in session.error
+    assert "deterministic recovery verification failed" in session.error
+    steps = service.incidents.list_steps(session.session_id)
+    assert any(step.agent == "orchestrator" and step.kind == "completed" for step in steps)
+    assert any(step.agent == "verification" and step.kind == "error" for step in steps)
     assert service.runs.get_output(summary.run_id) == []
 
 
@@ -159,12 +170,12 @@ def test_mcp_description_and_schema_reach_the_model_tool_definition(tmp_path: Pa
     async def inspect_tools() -> None:
         async with PlatformClient(build_server()) as platform:
             team = AgentTeam(scripted_model(), service.runs, platform, "run-x", lambda *_: None)
-            tools = team._bridge(team.gateways["quality"], Observed())
+            tools = team._bridge(team.gateways["investigation"], Observed())
             contract = next(tool for tool in tools if tool.name == "get_dataset_contract")
             announced = next(tool for tool in platform.listed if tool.name == contract.name)
             assert contract.description == announced.description
             assert contract.function_schema.json_schema == announced.input_schema
-            assert "get_source_status" not in {tool.name for tool in tools}
+            assert "get_source_status" in {tool.name for tool in tools}
 
     asyncio.run(inspect_tools())
 
@@ -184,7 +195,7 @@ def test_fabricated_evidence_is_rejected_and_persisted(tmp_path: Path) -> None:
     assert service.incidents.get_for_run(summary.run_id).status == "analysis_failed"
 
 
-def test_remediation_retries_a_failed_ingestion_and_the_reviewer_confirms(tmp_path: Path) -> None:
+def test_remediation_retries_and_code_confirms_despite_model_awaiting_correction(tmp_path: Path) -> None:
     service = PipelineService(tmp_path / "history.sqlite3")
     failed = service.run(SCENARIOS_DIR / "source_unavailable.json", agent_model=scripted_model(action="retry_ingestion"))
     workflow = service.incidents.get_for_run(failed.run_id)
@@ -198,6 +209,18 @@ def test_remediation_retries_a_failed_ingestion_and_the_reviewer_confirms(tmp_pa
     assert len(retried.output_records) == 40
     outcome = service.incidents.list_sessions(failed.run_id)[0].outcome
     assert outcome["actions_taken"] == [f"action:{action.action_id}"]
+    [session] = service.incidents.list_sessions(failed.run_id)
+    completed = [
+        step for step in service.incidents.list_steps(session.session_id) if step.kind == "completed"
+    ]
+    assert [step.agent for step in completed[-2:]] == ["orchestrator", "verification"]
+    assert json.loads(completed[-2].message)["status"] == "awaiting_correction"
+    assert json.loads(completed[-1].message) == {
+        "run_id": workflow.latest_run_id,
+        "proposed_status": "awaiting_correction",
+        "confirmed_status": "resolved",
+        "recovery_verified": True,
+    }
 
 
 def test_agent_evaluation_checks_the_retry_trajectory(tmp_path: Path) -> None:
@@ -275,3 +298,132 @@ def test_quarantine_is_denied_when_too_many_records_fail(tmp_path: Path) -> None
         if call.tool == "quarantine_failed_records"
     ]
     assert call.outcome == "blocked" and call.detail.startswith("Policy:")
+
+
+def test_orchestrator_routes_missing_evidence_back_to_investigation(tmp_path: Path) -> None:
+    service = PipelineService(tmp_path / "history.sqlite3")
+    failed = service.run(
+        SCENARIOS_DIR / "source_unavailable.json",
+        agent_model=scripted_model(action="retry_ingestion", follow_up=True),
+    )
+    [session] = service.incidents.list_sessions(failed.run_id)
+    reports = [
+        json.loads(step.message) for step in service.incidents.list_steps(session.session_id)
+        if step.kind == "completed" and step.agent in {"investigation", "remediation"}
+    ]
+    assert [r["decision"] for r in reports] == ["complete", "needs_evidence", "complete", "action_executed"]
+    assert service.incidents.get_for_run(failed.run_id).status == "resolved"
+    assert any(
+        call.tool == "get_source_status" and call.agent == "investigation"
+        for call in AuditRepository(service.database).list_calls(run_id=failed.run_id)
+    )
+
+
+def test_team_stops_repeated_tasks_and_queries_without_new_evidence(tmp_path: Path) -> None:
+    service = PipelineService(tmp_path / "history.sqlite3")
+    failed = service.run(SCENARIOS_DIR / "source_unavailable.json")
+
+    async def investigate() -> None:
+        async with PlatformClient(build_server()) as platform:
+            team = AgentTeam(scripted_model(follow_up=True), service.runs, platform, failed.run_id, lambda *_: None)
+            with pytest.raises(ModelRetry, match="investigation first"):
+                await team.ask("remediation", "Try recovery before investigation.")
+            await team.ask("investigation", "Initial diagnosis.")
+            with pytest.raises(ModelRetry, match="Do not repeat"):
+                await team.ask("investigation", "Initial diagnosis.")
+            await team.ask("remediation", "Choose next step.")
+            with pytest.raises(ModelRetry, match="investigation first"):
+                await team.ask("remediation", "Try without the missing evidence.")
+            await team.ask("investigation", "Recheck the original evidence.")
+            await team.ask("remediation", "Reconsider with no new facts.")
+            assert team.no_progress == 2
+            with pytest.raises(ModelRetry, match="No new evidence"):
+                await team.ask("investigation", "Another differently worded repetition.")
+
+    asyncio.run(investigate())
+
+
+def test_failed_quarantine_attempt_is_investigated_before_more_remediation(tmp_path: Path, monkeypatch) -> None:
+    service = PipelineService(tmp_path / "history.sqlite3")
+    pipeline = service.current_pipeline("orders_daily")
+    pipeline = pipeline.model_copy(update={"rules": [
+        rule.model_copy(update={"minimum_count": 39}) if rule.rule_id == "minimum-volume" else rule
+        for rule in pipeline.rules
+    ]})
+    monkeypatch.setattr(service, "current_pipeline", lambda _: pipeline)
+    base = scripted_model(action="quarantine_failed_records")
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        names = {tool.name for tool in info.function_tools}
+        returns = [
+            part for message in messages if isinstance(message, ModelRequest)
+            for part in message.parts if isinstance(part, ToolReturnPart)
+        ]
+        remediations = [part for part in returns if part.tool_name == "ask_remediation"]
+        investigations = [part for part in returns if part.tool_name == "ask_investigation"]
+        action_results = [
+            content(part.content) for part in returns if part.tool_name == "quarantine_failed_records"
+        ]
+        executed = next((value for value in action_results if value.get("status") == "executed"), None)
+        if "quarantine_failed_records" in names and executed:
+            if len(action_results) == 1:
+                return ModelResponse(parts=[ToolCallPart(
+                    "quarantine_failed_records", {"run_id": executed["new_run_id"]},
+                )])
+            assert action_results[-1]["status"] == "blocked"
+            assert "new investigation is required" in action_results[-1]["reason"]
+            return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
+                "role": "remediation", "decision": "action_executed",
+                "summary": "The new attempt failed a batch-level rule.",
+                "recommendation": "Investigate the new attempt before acting again.",
+                "evidence_refs": [executed["tool_ref"]], "actions_taken": [executed["ref"]],
+            })])
+        if "ask_investigation" in names and remediations:
+            if len(investigations) == 1:
+                return ModelResponse(parts=[ToolCallPart(
+                    "ask_investigation", {"task": "Investigate the new attempt's quality findings."},
+                )])
+            if len(remediations) == 1:
+                return ModelResponse(parts=[ToolCallPart(
+                    "ask_remediation", {"task": "Choose a safe next step for the new findings."},
+                )])
+        assert base.function is not None
+        return base.function(messages, info)
+
+    blocked = service.run(SCENARIOS_DIR / "few_invalid_records.json", agent_model=FunctionModel(respond))
+    workflow = service.incidents.get_for_run(blocked.run_id)
+    assert workflow.status == "awaiting_correction"
+    latest = service.runs.get_run(workflow.latest_run_id)
+    assert [finding.rule_id for finding in latest.findings] == ["minimum-volume"]
+    assert latest.output_records == []
+    assert len(service.actions.list_failed_records(workflow.incident_id)) == 2
+    [session] = service.incidents.list_sessions(blocked.run_id)
+    completed = [
+        step.agent for step in service.incidents.list_steps(session.session_id)
+        if step.kind == "completed"
+    ]
+    assert completed == [
+        "investigation", "remediation", "investigation", "remediation", "orchestrator", "verification",
+    ]
+
+
+def test_final_recovery_hook_reads_destination_after_orchestrator_returns(tmp_path: Path, monkeypatch) -> None:
+    service = PipelineService(tmp_path / "history.sqlite3")
+    original = AgentTeam.run
+
+    async def lose_delivery_after_response(self, incident_id, *, resume_context=""):
+        outcome = await original(self, incident_id, resume_context=resume_context)
+        service.simulator.destination.delete_run(self.run_id)
+        return outcome.model_copy(update={"status": "resolved"})
+
+    monkeypatch.setattr(AgentTeam, "run", lose_delivery_after_response)
+    with pytest.raises(AgentExecutionError, match="deterministic recovery verification failed"):
+        service.run(
+            SCENARIOS_DIR / "source_unavailable.json",
+            agent_model=scripted_model(action="retry_ingestion"),
+        )
+    [action] = service.actions.list_actions()
+    workflow = service.incidents.get_for_run(action.source_run_id)
+    assert workflow.status == "analysis_failed"
+    assert workflow.latest_run_id == action.result_run_id
+    assert service.runs.get_output(workflow.latest_run_id) == []

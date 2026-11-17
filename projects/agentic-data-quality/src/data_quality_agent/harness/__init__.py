@@ -4,10 +4,9 @@ An agent is a model plus a harness: its instructions, its tools, the format of i
 checks around it (course session 01). Each file below holds one of those parts:
 
     orchestrator.py   coordinator: instructions, final answer, delegation and the check of its answer
-    quality.py        quality specialist: instructions and tools
-    diagnosis.py      diagnosis specialist: instructions and tools
+    investigation.py combined quality and pipeline investigation: instructions and tools
     remediation.py    remediation specialist: instructions, tools and the two automatic actions
-    reviewer.py       independent reviewer: instructions, tools and the recovery check in code
+    recovery.py       deterministic quality and delivery verification (not an agent)
     specialists.py    what every specialist is told, its answer format and the shared checks
     hooks.py          code run before and after every tool call (allowlist, budget, size, trust)
     policies.py       when an automatic action may run (decided in code, never by the model)
@@ -17,9 +16,9 @@ checks around it (course session 01). Each file below holds one of those parts:
 Agents never receive batch records: their tools return rules, counts, row positions, logs and refs.
 """
 
-from data_quality_agent.harness import diagnosis, quality, remediation, reviewer
+from data_quality_agent.harness import investigation, remediation
 
-SPECIALISTS = {module.ROLE: module for module in (quality, diagnosis, remediation, reviewer)}
+SPECIALISTS = {module.ROLE: module for module in (investigation, remediation)}
 # Least privilege: the tool catalog grants each tool only to the roles that list it here.
 TOOLS_BY_ROLE: dict[str, tuple[str, ...]] = {role: module.TOOLS for role, module in SPECIALISTS.items()}
 

@@ -125,7 +125,8 @@ Um parecer do modelo não substitui esse controlo.
 Nesta fase estão implementados a ingestão, transformação, gate e destino, a
 persistência de cada execução e do seu incidente, as tools de consulta locais,
 o servidor MCP da plataforma da origem e a equipa PydanticAI com orquestrador
-e quatro especialistas. A interface aceita um lote corrigido para o mesmo
+e dois especialistas (Investigation e Remediation), com confirmação de recuperação
+determinística. A interface aceita um lote corrigido para o mesmo
 incidente, numa nova tentativa com as regras originais. Ações autónomas,
 aprovações e retoma após interrupção continuam previstas para fases seguintes.
 Não há reparação automática fictícia.
@@ -139,14 +140,11 @@ flowchart TB
     APP --> WF[Workflow Executor e recuperação]
     APP --> SIM[Simulador de pipelines]
     WF --> ORQ[Agente orquestrador]
-    ORQ --> QI[Sub-agent de qualidade: somente leitura]
-    ORQ --> PD[Sub-agent de diagnóstico: somente leitura]
+    ORQ --> QI[Investigation: qualidade, causas e memória]
     ORQ --> REM[Sub-agent de remediação: ação limitada]
-    ORQ --> REV[Sub-agent revisor: validação independente]
+    WF --> VER[Verificação determinística da recuperação]
     QI --> G[Hooks antes/depois da tool e Tool Gateway]
-    PD --> G
     REM --> G
-    REV --> G
     G --> TOOLS[Tools locais de pipeline, qualidade, runbook, incidente e ação]
     G --> MCP[MCP: plataforma da origem, tools fixadas por hash]
     MCP --> EXT[(SQLite da plataforma, só leitura)]
@@ -219,14 +217,14 @@ referências às ferramentas usadas. Texto livre não autoriza uma ação.
 | Agente | Responsabilidade e limite |
 |---|---|
 | Orquestrador | Interpreta o pedido, identifica pipeline e incidente, delega trabalho, integra respostas e controla a progressão. Não executa SQL nem ações diretamente. |
-| Investigador de Data Quality | Consulta perfil, regras e amostras sintéticas. Devolve achados tipados, registos de evidência, severidade e métricas. Não altera dados. |
-| Diagnóstico de Pipeline | Consulta estados, logs, dependências, métricas e runbooks. Devolve causas prováveis e evidência. Não altera a execução. |
+| Investigation | Combina qualidade e diagnóstico: regras, findings, perfil, logs, histórico, origem e memória. Devolve evidências, causas e incertezas; não altera dados ou regras. |
 | Remediação | Transforma uma tarefa autorizada numa ação permitida. Não define permissões, não aprova a própria ação e não declara sucesso com base na sua resposta. |
-| Revisor | Lê o estado após a ação e compara-o com critérios objetivos de recuperação. Só emite resolução quando os critérios forem confirmados. |
+| Verificação em código (não agente) | Exige pipeline concluída, qualidade aprovada, ausência de findings e entrega relida igual ao lote aprovado. Determina `resolved`. |
 
-Investigação de qualidade e diagnóstico de pipeline podem decorrer em paralelo.
-O orquestrador envia ao agente de remediação apenas a tarefa necessária, a
-evidência relevante e as restrições de segurança.
+O orquestrador começa por Investigation e passa conclusões e restrições a
+Remediation. Este pode devolver `needs_evidence`, com lacunas e pergunta focada.
+O código exige o seguimento antes de nova remediação. Tarefas repetidas são
+recusadas, assim como novas delegações após duas sem progresso; o máximo é 12.
 
 ## 8. Workflow principal
 
@@ -236,33 +234,30 @@ sequenceDiagram
     participant App as Application Service
     participant WF as Workflow Executor
     participant O as Orquestrador
-    participant Q as Sub-agent de qualidade
-    participant D as Sub-agent de diagnóstico
+    participant Q as Investigation
     participant RM as Sub-agent de remediação
     participant H as Hooks e Tool Gateway
     participant T as Tools locais / MCP da origem
     participant A as Serviço de autorização / aprovação
-    participant V as Sub-agent revisor
+    participant V as Verificação determinística
     participant DB as SQLite
 
     User->>App: Executar pipeline ou investigar incidente
     App->>WF: Criar workflow com contexto selecionado
     WF->>DB: Persistir execução e estado inicial
     WF->>O: Entregar incidente bloqueado
-    par Investigação em paralelo
-        O->>Q: Tarefa: analisar resultados e regras
-        Q->>H: Chamada de tool
-        H->>T: Hook antes: permitido
-        T-->>H: Resultado (hook depois: auditoria e guardrails)
-        H-->>Q: Resultado verificado
-        Q-->>O: Achados estruturados e evidências
-    and
-        O->>D: Tarefa: analisar estado, sinais e runbooks
-        D->>H: Chamada de tool
-        H->>T: Hook antes: permitido
-        T-->>H: Resultado
-        H-->>D: Resultado verificado
-        D-->>O: Diagnóstico estruturado e evidências
+    O->>Q: Tarefa: analisar qualidade e causas
+    Q->>H: Chamada de tool
+    H->>T: Hook antes: permitido
+    T-->>H: Resultado (hook depois: auditoria e guardrails)
+    H-->>Q: Resultado verificado
+    Q-->>O: Achados estruturados e evidências
+    O->>RM: Escolher próximo passo
+    opt Falta evidência
+        RM-->>O: needs_evidence e pergunta focada
+        O->>Q: Investigar apenas a lacuna
+        Q-->>O: Evidência adicional ou incerteza explícita
+        O->>RM: Reavaliar com os relatórios da tentativa
     end
     O->>WF: Checkpoint com resultados integrados
     WF->>DB: Guardar checkpoint
@@ -283,14 +278,15 @@ sequenceDiagram
         T-->>H: Resultado (pode ser desconhecido)
         H-->>RM: Resultado verificado
         RM-->>O: Resultado da ação
-        O->>WF: Pedir reexecução das etapas afetadas e do gate
+        Note over T,WF: A tool já executou a nova tentativa e o gate antes de devolver
     end
-    O->>V: Tarefa: confirmar critérios de recuperação
-    V->>H: Ler estado observado após a ação
-    H-->>V: Resultado verificado
-    V-->>O: Veredicto estruturado
+    opt Nova tentativa sem recuperação
+        O->>Q: Investigar os novos findings antes de nova remediação
+    end
     O->>H: Hook no fim: a conclusão tem evidência?
-    O-->>WF: Decisão final
+    O-->>WF: Resposta proposta
+    WF->>V: confirm_recovery: reler tentativa atual e destino
+    V-->>WF: Confirmar recuperação ou recusar resolved sem prova
     WF->>DB: Persistir verificação e estado final
     WF-->>User: Apresentar resultado e evidência
 ```
@@ -427,7 +423,7 @@ e `agent_sessions` e `agent_steps` (outputs, falhas e passos dos agentes).
 As migrações 5–7 acrescentam ações com chave idempotente para retoma,
 `failed_records`, decisões humanas sobre essas linhas e `incident_memories`
 com proveniência por tool e validade. Uma ação incompleta reutiliza o mesmo
-`run_id` e limpa a entrega parcial antes do replay. O diagnóstico pode escrever
+`run_id` e limpa a entrega parcial antes do replay. Investigation pode escrever
 notas curtas ligadas a evidência; os agentes só consultam memórias não expiradas
 da pipeline atual. Os runbooks são ficheiros versionados, não linhas da base
 de dados. Há mais dois ficheiros fora destas migrações: o destino
@@ -536,7 +532,7 @@ quando aplicável.
    eventos, suite de avaliação e testes sem modelo.
 3. **Tools e runbooks:** interfaces tipadas, catálogo limitado, leitura de
    dados persistidos e ações simuladas verificáveis/idempotentes.
-4. **Agentes:** investigador, diagnosticador, remediador, revisor e
+4. **Agentes:** Investigation, Remediation e
    orquestrador; testar contratos e coordenação com doubles locais.
 5. **Segurança e recuperação:** autorização, aprovação, auditoria, checkpoints,
    falhas injetadas e retoma.

@@ -161,20 +161,27 @@ da plataforma da origem. **Os registos do lote nunca são enviados aos
 agentes.** Usa apenas os dados sintéticos do projeto. Não se efetuam chamadas
 reais nos testes.
 
-- O **orquestrador** só tem tools de delegação. Decide quem consultar e pode
-  pedir investigações independentes em paralelo.
-- **Qualidade** e **diagnóstico** investigam com as respetivas tools.
+- O **orquestrador** só tem tools de delegação. Gere um ciclo adaptativo:
+  Investigation → Remediation → investigação focada quando falta evidência.
+- **Investigation** junta qualidade e diagnóstico, consulta contexto e memória
+  e pode guardar uma lição com evidência e validade.
 - **Remediação** escolhe o próximo passo e pode pedir uma das duas ações
   automáticas (ver abaixo); não altera regras nem escreve na origem.
-- O **revisor** consulta a qualidade e a entrega da tentativa mais recente
-  (corrigida ou criada por uma ação).
+- A **verificação determinística** substitui o agente revisor: exige sucesso,
+  qualidade aprovada, ausência de findings e dados entregues iguais aos aprovados.
 - As tools MCP chegam ao modelo com a descrição em texto e o esquema de
   parâmetros aprovados pelo lock, não com a hash. A execução continua a
   passar pelo gateway.
 
 Os outputs são modelos Pydantic. Referências inventadas são rejeitadas;
-`resolved` exige revisão independente e qualidade/carregamento confirmados
-em código. Há limites de chamadas, delegações, pedidos ao modelo e tempo.
+À saída do orquestrador, o serviço relê a tentativa atual e o destino e executa
+`confirm_recovery`, antes de guardar o estado final ou o apresentar na UI.
+Uma proposta `resolved` sem recuperação comprovada é recusada com erro explícito.
+Se a recuperação estiver comprovada, o resultado final é `resolved`, mesmo que o
+modelo proponha outro estado. O passo `verification` regista a proposta e o
+estado confirmado depois do passo final do orquestrador.
+Uma tentativa já recuperada é confirmada sem chamadas ao
+modelo. Há limites de chamadas, delegações, pedidos ao modelo e tempo.
 Falhas ficam explícitas na investigação guardada, sem se converterem em
 sucesso. O relatório completo e os passos dos agentes são guardados na base
 de controlo e apresentados no frontend.
@@ -184,9 +191,9 @@ de controlo e apresentados no frontend.
 | Ficheiro (`src/data_quality_agent/harness/`) | O que define |
 |---|---|
 | `orchestrator.py` | instruções do orquestrador, `OrchestrationResult`, limites de delegação e `check_outcome` |
-| `quality.py`, `diagnosis.py` | instruções e tools de cada especialista |
+| `investigation.py` | instruções e tools de qualidade e diagnóstico combinados |
 | `remediation.py` | instruções, tools e as duas ações (`ACTIONS`) |
-| `reviewer.py` | instruções, tools e o critério de recuperação em código (`recovery_verified`) |
+| `recovery.py` | critério de recuperação (`recovery_verified`) e confirmação final pelo serviço (`confirm_recovery`), sem agente |
 | `specialists.py` | instruções comuns, `SpecialistReport` e `check_report` |
 | `hooks.py` | `before_tool` / `after_tool` (allowlist, orçamento, pinning MCP, tamanho, confiança) |
 | `policies.py` | `check_retry` e `plan_quarantine` |
@@ -196,6 +203,22 @@ de controlo e apresentados no frontend.
 O catálogo de tools (`tools/catalog.py`) lê as permissões de cada agente da
 lista `TOOLS` do seu ficheiro e recusa arrancar se um ficheiro listar uma
 tool que não existe.
+
+### Ciclo adaptativo e progresso
+
+Os relatórios indicam `decision`: Investigation devolve `complete`; Remediation
+devolve `needs_evidence`, `action_executed`, `awaiting_correction` ou `unresolved`.
+`needs_evidence` exige `missing_evidence` e uma `follow_up_question` concreta.
+O código passa os relatórios da tentativa aos especialistas, exige investigação
+antes da remediação e uma resposta à pergunta pendente antes de nova remediação.
+Após uma ação sem recuperação, os novos findings exigem nova investigação.
+
+O limite é de 12 delegações por investigação. Tarefas repetidas na mesma tentativa
+são recusadas; após duas delegações sem evidência nova nem mudança de tentativa,
+novas delegações são bloqueadas e o orquestrador deve terminar com `unresolved`.
+Um novo ID de auditoria de uma consulta repetida não conta como evidência nova.
+Estas recusas e os relatórios ficam no histórico; os limites gerais de chamadas
+e tempo continuam ativos se o modelo insistir em pedidos bloqueados.
 
 ## Ações automáticas
 
@@ -217,8 +240,8 @@ bloco `remediation` da sua
 - Uma ação recusada pela política fica no audit como `blocked`, com o motivo,
   e o agente recebe esse motivo.
 - O resultado devolve ao agente apenas o novo `run_id`, os estados e as
-  contagens. A equipa passa a trabalhar sobre a nova tentativa e o revisor
-  verifica-a; `resolved` continua a exigir a verificação em código.
+  contagens. A equipa passa a trabalhar sobre a nova tentativa; o código
+  verifica a recuperação, ou o orquestrador pede a análise dos novos findings.
 - Os registos falhados ficam em `failed_records`, separados do warehouse, com
   estados `held`, `released` ou `discarded` (inicialmente `held`); aparecem no
   frontend, na secção **Ações automáticas**, apenas para revisão humana.
@@ -235,7 +258,7 @@ bloco `remediation` da sua
 - Se o processo for interrompido durante uma ação, **Retomar ações
   interrompidas** reutiliza o mesmo `run_id` idempotente; só sessões sem
   atividade há pelo menos 10 minutos podem ser retomadas.
-- Os agentes podem consultar memória ativa da pipeline. O diagnóstico pode
+- Os agentes podem consultar memória ativa da pipeline. Investigation pode
   guardar uma nota curta apenas com referência a uma tool bem-sucedida e prazo
   (1–365 dias); o código rejeita dados pessoais detetados.
 - O hook de saída mascara e-mails, telefones e NIFs portugueses detetados antes
@@ -269,8 +292,7 @@ nova receção de dados.
 O lote passa novamente pela ingestão, transformação e pelo mesmo gate
 determinístico. Se falhar, o incidente mantém-se aberto e pode receber outra
 correção. Se passar, é carregado e verificado por leitura. Com agentes
-ativados, o revisor verifica esse resultado antes de o orquestrador resolver
-o incidente; sem agentes, o serviço usa a confirmação determinística.
+ativados ou não, a confirmação da recuperação é determinística.
 
 Um lote já carregado não pode ser novamente entregue como correção. Se a
 investigação falhar após a entrega, usa **Investigar com agentes** para repetir
@@ -352,12 +374,10 @@ existem para descrever a simulação; a interface marca essas linhas com
 
 | Sub-agent | Tools locais (base local) | Tools MCP (plataforma da origem) |
 |---|---|---|
-| `quality` | `list_quality_rules`, `get_quality_findings`, `get_batch_profile`, `find_runbook` | `get_dataset_contract`, `list_schema_changes` |
-| `diagnosis` | `get_run_summary`, `get_run_logs`, `list_recent_runs`, `compare_with_last_success`, `get_incident`, `find_runbook` | `get_dataset_contract`, `list_schema_changes`, `get_source_status`, `list_upstream_incidents` |
-| `remediation` | `get_incident`, `find_runbook`; ações `retry_ingestion` e `quarantine_failed_records` | `get_source_status`, `list_upstream_incidents` |
-| `reviewer` | `get_quality_findings`, `get_run_summary`, `get_delivery_status` | `get_dataset_contract` |
+| `investigation` | `list_quality_rules`, `get_quality_findings`, `get_batch_profile`, `get_run_summary`, `get_run_logs`, `list_recent_runs`, `compare_with_last_success`, `get_incident`, `find_runbook`, `get_relevant_memory`, `remember_incident_context` | `get_dataset_contract`, `list_schema_changes`, `get_source_status`, `list_upstream_incidents` |
+| `remediation` | `get_incident`, `find_runbook`, `get_relevant_memory`; ações `retry_ingestion` e `quarantine_failed_records` | `get_source_status`, `list_upstream_incidents` |
 
-O orquestrador não tem tools: recebe só um resumo inicial do incidente
+O orquestrador só tem tools de delegação: recebe um resumo inicial do incidente
 (`context.incident_brief`) e delega aos sub-agents. O catálogo
 (`tools/catalog.py`) indica a origem de cada tool; quem a pode usar vem da
 lista `TOOLS` de cada ficheiro do harness. `lookup_customers` (MCP) não é
@@ -429,7 +449,7 @@ negócio do serviço para a apresentação.
   tentativa automática. Mostra também bloqueios e latência das tools.
 - **Dados e regras / Memória:** consulta e exportação dos lotes, regras
   históricas da execução e memória da pipeline com origem/validade, incluindo
-  a consulta de notas expiradas. A UI não escreve memória fora do fluxo do diagnóstico.
+  a consulta de notas expiradas. A UI não escreve memória fora do fluxo de Investigation.
   Dados e métricas das tentativas automáticas também ficam em secções expansíveis.
 - **Avaliação:** seleção de casos, execução determinística ou com agentes,
   taxa de aprovação, esperado versus observado, duração, tokens e logs por

@@ -97,7 +97,7 @@ def test_personal_data_helper_detects_pii_without_flagging_identifiers() -> None
 
 
 def test_gateway_filters_personal_data_from_tool_errors(service: PipelineService) -> None:
-    result = call(gateway(service, "diagnosis"), "get_run_summary", run_id="user@example.com")
+    result = call(gateway(service, "investigation"), "get_run_summary", run_id="user@example.com")
     assert result == {"error": "Unknown run '[REDACTED]'."}
 
 
@@ -117,7 +117,7 @@ def test_redaction_preserves_untrusted_notice_and_result_size_limit() -> None:
 # Local tools: our own history -------------------------------------------------------------------
 
 def test_agents_never_see_the_simulator_bookkeeping(service: PipelineService, blocked_run: PipelineRun) -> None:
-    diagnosis = gateway(service, "diagnosis")
+    diagnosis = gateway(service, "investigation")
 
     logs = call(diagnosis, "get_run_logs", run_id=blocked_run.run_id, limit=50)
     summary = call(diagnosis, "get_run_summary", run_id=blocked_run.run_id)
@@ -134,7 +134,7 @@ def test_agents_never_see_the_simulator_bookkeeping(service: PipelineService, bl
 def test_quality_tools_return_only_the_evidence_that_matters(
     service: PipelineService, blocked_run: PipelineRun,
 ) -> None:
-    quality = gateway(service, "quality")
+    quality = gateway(service, "investigation")
 
     findings = call(quality, "get_quality_findings", run_id=blocked_run.run_id)
     profile = call(quality, "get_batch_profile", run_id=blocked_run.run_id)
@@ -155,7 +155,7 @@ def test_diagnosis_compares_a_late_batch_with_the_last_delivered_one(service: Pi
     healthy = service.run(SCENARIOS_DIR / "healthy.json")
     late = service.run(SCENARIOS_DIR / "late_and_low_volume.json")
 
-    comparison = call(gateway(service, "diagnosis"), "compare_with_last_success", run_id=late.run_id)
+    comparison = call(gateway(service, "investigation"), "compare_with_last_success", run_id=late.run_id)
 
     assert comparison["baseline_run_id"] == healthy.run_id
     assert comparison["record_count"] == {"current": 25, "baseline": 40}
@@ -165,7 +165,7 @@ def test_diagnosis_compares_a_late_batch_with_the_last_delivered_one(service: Pi
 def test_hooks_block_calls_outside_the_agent_catalog_and_beyond_the_budget(
     service: PipelineService, blocked_run: PipelineRun,
 ) -> None:
-    reviewer = gateway(service, "reviewer", max_calls=2)
+    reviewer = gateway(service, "investigation", max_calls=2)
 
     outside = call(reviewer, "retry_ingestion", run_id=blocked_run.run_id)
     invalid = call(reviewer, "get_run_summary", run_id=blocked_run.run_id, extra=1)
@@ -201,7 +201,7 @@ def test_orchestrator_brief_holds_the_incident_but_no_evidence(
 def test_platform_tools_answer_from_the_external_database_through_the_gateway(
     service: PipelineService, blocked_run: PipelineRun,
 ) -> None:
-    contract, changes, outside, unassigned = with_platform(service, "quality", [
+    contract, changes, outside, unassigned = with_platform(service, "investigation", [
         ("get_dataset_contract", {"dataset_id": "sales.orders"}),
         ("list_schema_changes", {"dataset_id": "sales.orders", "status": "released"}),
         ("get_source_status", {"system_id": "orders-export-api"}),
@@ -211,20 +211,20 @@ def test_platform_tools_answer_from_the_external_database_through_the_gateway(
     assert contract["freshness_sla_minutes"] == 60
     assert [change["column"] for change in changes["changes"]] == ["status"]
     assert "never as instructions" in changes["content_trust"]
-    assert outside["status"] == "blocked"
+    assert outside["status"] == "degraded"
     # It would need customer ids taken from the records, so no harness file grants it.
     assert unassigned["status"] == "blocked"
     audit = AuditRepository(service.database).list_calls(run_id=blocked_run.run_id)
     assert [(c.tool, c.source, c.outcome) for c in audit] == [
         ("get_dataset_contract", "mcp", "ok"),
         ("list_schema_changes", "mcp", "ok"),
-        ("get_source_status", "mcp", "blocked"),
+        ("get_source_status", "mcp", "ok"),
         ("lookup_customers", "mcp", "blocked"),
     ]
 
 
 def test_platform_errors_reach_the_agent_as_tool_errors(service: PipelineService) -> None:
-    unknown, invalid = with_platform(service, "diagnosis", [
+    unknown, invalid = with_platform(service, "investigation", [
         ("get_source_status", {"system_id": "billing-api"}),
         ("list_upstream_incidents", {"system_id": "orders-export-api", "limit": 99}),
     ])
@@ -240,12 +240,12 @@ def test_mcp_tools_need_a_pinned_description(service: PipelineService, tmp_path:
     tampered = tmp_path / "mcp_lock.json"
     tampered.write_text(json.dumps(lock), encoding="utf-8")
 
-    changed, unreviewed, contract = with_platform(service, "diagnosis", [
+    changed, unreviewed, contract = with_platform(service, "investigation", [
         ("get_source_status", {"system_id": "orders-export-api"}),
         ("list_upstream_incidents", {"system_id": "orders-export-api"}),
         ("get_dataset_contract", {"dataset_id": "sales.orders"}),
     ], lock_path=tampered)
-    disconnected = call(gateway(service, "diagnosis"), "get_dataset_contract", dataset_id="sales.orders")
+    disconnected = call(gateway(service, "investigation"), "get_dataset_contract", dataset_id="sales.orders")
 
     assert "changed since it was reviewed" in changed["reason"]
     assert "not reviewed yet" in unreviewed["reason"]

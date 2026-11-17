@@ -20,7 +20,7 @@
         "incident_status": "resolved",
         "expected_action": "retry_ingestion",
         "output_count": 40,
-        "required_roles": ["diagnosis", "remediation", "reviewer"]
+        "required_roles": ["investigation", "remediation", "verification"]
       }
     },
     {
@@ -34,7 +34,7 @@
         "incident_status": "awaiting_correction",
         "expected_action": null,
         "output_count": 0,
-        "required_roles": ["quality", "remediation"]
+        "required_roles": ["investigation", "remediation"]
       }
     },
     {
@@ -54,7 +54,7 @@
         "incident_status": "awaiting_correction",
         "expected_action": null,
         "output_count": 0,
-        "required_roles": ["quality", "remediation"]
+        "required_roles": ["investigation", "remediation"]
       }
     },
     {
@@ -68,7 +68,7 @@
         "incident_status": "awaiting_correction",
         "expected_action": null,
         "output_count": 0,
-        "required_roles": ["quality", "remediation"]
+        "required_roles": ["investigation", "remediation"]
       }
     },
     {
@@ -82,7 +82,7 @@
         "incident_status": "resolved",
         "expected_action": "quarantine_failed_records",
         "output_count": 38,
-        "required_roles": ["quality", "remediation", "reviewer"]
+        "required_roles": ["investigation", "remediation", "verification"]
       }
     }
   ]

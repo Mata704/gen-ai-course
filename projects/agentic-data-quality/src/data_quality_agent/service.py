@@ -4,6 +4,7 @@ approved data to the separate destination (warehouse) file."""
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from pydantic_ai.models import Model
 
 from data_quality_agent.harness.orchestrator import OrchestrationResult
 from data_quality_agent.harness.policies import PolicyDenied, check_retry, plan_quarantine
+from data_quality_agent.harness.recovery import confirm_recovery
 from data_quality_agent.harness.team import AgentExecutionError, AgentTeam
 from data_quality_agent.corrections import parse_corrected_batch
 from data_quality_agent.persistence.actions import ActionRepository
@@ -463,7 +465,7 @@ class PipelineService:
 
         def step(agent: str, kind: str, message: str) -> None:
             self.incidents.append_step(session_id, agent, kind, message)
-            emit(EventKind.LOG, f"{agent}: {kind}" + (f" — {message}" if kind in ("tool", "action") else ""))
+            emit(EventKind.LOG, f"{agent}: {kind}" + (f" — {message}" if kind in ("tool", "action", "blocked") else ""))
 
         async def investigate() -> tuple[OrchestrationResult, str]:
             async with PlatformClient() as platform:
@@ -476,6 +478,18 @@ class PipelineService:
         emit(EventKind.STAGE_STARTED, "Started agent investigation.")
         try:
             outcome, latest_run_id = asyncio.run(investigate())
+            try:
+                confirmed = confirm_recovery(outcome, self._stored_run(latest_run_id))
+            except ValueError as error:
+                step("verification", "error", str(error))
+                raise
+            step("verification", "completed", json.dumps({
+                "run_id": latest_run_id,
+                "proposed_status": outcome.status,
+                "confirmed_status": confirmed.status,
+                "recovery_verified": confirmed.status == "resolved",
+            }))
+            outcome = confirmed
         except Exception as error:
             detail = f"{type(error).__name__}: {error}"
             self.incidents.append_step(session_id, "orchestrator", "error", detail)
