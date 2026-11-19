@@ -33,13 +33,90 @@ def error_spans(trace) -> list[str]:
     return [f"{span['name']} failed: {span['error']}" for span in trace.spans if span["status"] == "ERROR"]
 
 
-MONITORS = [error_spans]
+def unrecovered_incident(trace) -> list[str]:
+    """The incident is still unhealthy even if an agent reported success."""
+    if trace.root.get("recovered") is not False:
+        return []
+    gateway = trace.root.get("gateway", {})
+    return [
+        f"Incident not recovered: site {gateway.get('site')}, "
+        f"error rate {gateway.get('error_rate')}, latency {gateway.get('latency_ms')} ms."
+    ]
+
+
+def tool_call_spikes(trace) -> list[str]:
+    """Flag an agent that exceeded the lab's six-call tool budget."""
+    return [
+        f"{agent} made {usage['tool_calls']} tool calls (over the six-call budget)."
+        for agent, usage in trace.agents().items()
+        if usage["tool_calls"] > 6
+    ]
+
+
+def duplicate_specialist_consults(trace) -> list[str]:
+    """Flag repeated orchestrator consultations that add cost without new evidence."""
+    counts: dict[str, int] = {}
+    for call in trace.tool_calls():
+        if call["tool"] in {"ask_network", "ask_database"}:
+            counts[call["tool"]] = counts.get(call["tool"], 0) + 1
+    return [
+        f"{tool} was called {count} times."
+        for tool, count in counts.items()
+        if count > 1
+    ]
+
+
+MONITORS = [error_spans, unrecovered_incident, tool_call_spikes, duplicate_specialist_consults]
 
 
 ANALYST_INSTRUCTIONS = """\
-You read the trace of an incident handled by a team of AI agents. Say what happened.
+You analyze production traces from an AI-agent incident team. Do not treat the team's report as proof:
+compare it with the root span's recovered flag and gateway metrics.
+
+Explain the actual cause and cite trace evidence. Read each agent's final result alongside relevant tool
+arguments/results and span errors. Check whether a cited change ID was passed to remediation and whether
+the chosen action matches the findings. Also inspect per-agent model/tool-call and token counts: repeated
+specialist consultations or tool-call loops can be the problem even when the incident recovered.
+
+Be concise and distinguish the incident's technical cause, an unsuccessful remediation, and excess cost.
+Do not invent details that the trace does not support.
 """
 
 
 def describe(trace) -> str:
-    return f"Incident {trace.root['incident']}, handled with a {trace.root['pattern']}. The team reported: {trace.root['reported']}."
+    root = trace.root
+    gateway = root.get("gateway", {})
+    lines = [
+        f"Incident {root.get('incident')}, handled with {root.get('pattern')}.",
+        f"Team report: {root.get('reported')}.",
+        (
+            f"Observed outcome: recovered={root.get('recovered')}; gateway site={gateway.get('site')}, "
+            f"latency_ms={gateway.get('latency_ms')}, error_rate={gateway.get('error_rate')}."
+        ),
+        f"Agent activity (model calls, tool calls, input tokens, output tokens): {trace.agents()}.",
+        f"Estimated model cost: ${trace.cost_usd():.5f}.",
+    ]
+
+    findings = [
+        f"{span['agent']}: {span['attributes']['final_result']}"
+        for span in trace.spans
+        if span["operation"] == "invoke_agent" and span["attributes"].get("final_result") is not None
+    ]
+    if findings:
+        lines.append("Agent final results: " + " | ".join(findings))
+
+    errors = [f"{span['name']}: {span['error']}" for span in trace.spans if span["status"] == "ERROR"]
+    if errors:
+        lines.append("Span errors: " + " | ".join(errors))
+
+    evidence = []
+    relevant_tools = {"ask_network", "ask_database", "recent_changes", "rollback_change", "failover_gateway", "gateway_state"}
+    for call in trace.tool_calls():
+        result = str(call["result"])
+        if call["tool"] in relevant_tools or '"error"' in result:
+            arguments = str(call["arguments"])[:250]
+            evidence.append(f"{call['agent']} -> {call['tool']}({arguments}): {result[:350]}")
+    if evidence:
+        lines.append("Relevant tool evidence: " + " | ".join(evidence))
+
+    return "\n".join(lines)

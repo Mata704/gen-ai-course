@@ -30,12 +30,82 @@ from __future__ import annotations
 
 
 async def resend(a2a) -> dict:
+    card = a2a.card()
+    skill = next((item for item in card.get("skills", []) if item.get("id") == "resend-confirmations"), None)
+    if skill is None:
+        raise RuntimeError("The Settlement Agent card does not advertise resend-confirmations.")
+
+    requirements = card.get("securityRequirements", [])
+    if not any("bearer" in requirement.get("schemes", {}) for requirement in requirements):
+        raise RuntimeError("The Settlement Agent card does not require the supported bearer authentication.")
+
+    token = a2a.token
     request = a2a.request
-    text = f"Please resend {request['batch']} for incident {request['incident']}. Approval: {request['approval_ref']}."
-    task: dict = {}
-    for _ in range(3):
-        task = await a2a.send_message({"role": "ROLE_USER", "parts": [{"text": text}]}, a2a.token)
-        if task.get("status", {}).get("state") == "TASK_STATE_COMPLETED":
+    batch = request["batch"]
+    incident = request["incident"]
+    approval_ref = request["approval_ref"]
+    idempotency_key = f"resend-confirmations:{incident}:{batch}"
+    text = f"Please resend {batch} for incident {incident}. Approval: {approval_ref}."
+    parts = [
+        {"text": text},
+        {"data": {
+            "batch": batch,
+            "incident": incident,
+            "approval_ref": approval_ref,
+            "idempotency_key": idempotency_key,
+        }},
+    ]
+
+    task = await a2a.send_message({"role": "ROLE_USER", "parts": parts}, token)
+    replied_to_input = False
+    while True:
+        if "error" in task:
+            raise RuntimeError(f"Settlement Agent request failed: {task['error']}")
+
+        status = task.get("status", {})
+        state = status.get("state")
+        task_id = task.get("id")
+
+        if state == "TASK_STATE_COMPLETED":
+            receipt = next(
+                (artifact for artifact in task.get("artifacts", []) if artifact.get("name") == "resend-receipt"),
+                None,
+            )
+            receipt_data = next(
+                (
+                    part["data"]
+                    for part in (receipt or {}).get("parts", [])
+                    if isinstance(part.get("data"), dict)
+                ),
+                {},
+            )
+            if receipt_data.get("batch") != batch or receipt_data.get("outcome") not in {"completed", "already_done"}:
+                raise RuntimeError("Settlement Agent completed the task without a valid resend receipt.")
+            a2a.note(f"Verified the resend receipt for {batch}.")
             return task
-        await a2a.wait(1)  # settlement is slow: ask again
-    return task
+
+        if state == "TASK_STATE_INPUT_REQUIRED":
+            if replied_to_input:
+                raise RuntimeError("Settlement Agent still requires input after the request was answered.")
+            if not task_id:
+                raise RuntimeError("Settlement Agent requested input without providing a task id.")
+            replied_to_input = True
+            task = await a2a.send_message(
+                {
+                    "role": "ROLE_USER",
+                    "parts": parts,
+                    "taskId": task_id,
+                    "contextId": task.get("contextId"),
+                },
+                token,
+            )
+            continue
+
+        if state in {"TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"}:
+            if not task_id:
+                raise RuntimeError(f"Settlement Agent returned {state} without providing a task id.")
+            await a2a.wait(1)
+            task = await a2a.get_task(task_id, token)
+            continue
+
+        raise RuntimeError(f"Settlement Agent ended the task in unexpected state {state!r}.")
